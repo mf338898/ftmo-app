@@ -141,6 +141,7 @@ export async function POST(req: Request) {
   
   const aggregates = computeAggregates(
     accountTrades,
+    [], // Pas de retraits pour l'instant
     finalInitialBalance,
   );
 

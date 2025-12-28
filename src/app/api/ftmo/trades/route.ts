@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const accountId = searchParams.get("accountId");
+  const userId = searchParams.get("userId") ?? "demo-user";
   const status = searchParams.get("status");
   const symbolFilter = searchParams.get("symbol");
   const resultFilter = searchParams.get("result"); // winner | loser
@@ -20,7 +21,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    let query = db.collection("trades").where("accountId", "==", accountId);
+    let query = db
+      .collection("trades")
+      .where("accountId", "==", accountId)
+      .where("userId", "==", userId);
     if (status === "open" || status === "closed") {
       query = query.where("status", "==", status);
     }
@@ -29,6 +33,14 @@ export async function GET(req: Request) {
     let trades = snapshot.docs.map(
       (doc) => ({ ticket: doc.id, ...doc.data() }) as TradeDoc,
     );
+
+    // Utiliser closeTime pour le filtrage lorsqu'on cible des trades clôturés
+    const getTime = (t: TradeDoc): number => {
+      if (status === "closed" && t.closeTime) {
+        return new Date(t.closeTime).getTime();
+      }
+      return new Date(t.closeTime ?? t.openTime ?? "").getTime();
+    };
 
     if (symbolFilter) {
       trades = trades.filter(
@@ -43,16 +55,11 @@ export async function GET(req: Request) {
 
     if (start) {
       const startDate = new Date(start).getTime();
-      trades = trades.filter(
-        (t) =>
-          new Date(t.openTime ?? t.closeTime ?? "").getTime() >= startDate,
-      );
+      trades = trades.filter((t) => getTime(t) >= startDate);
     }
     if (end) {
       const endDate = new Date(end).getTime();
-      trades = trades.filter(
-        (t) => new Date(t.openTime ?? t.closeTime ?? "").getTime() <= endDate,
-      );
+      trades = trades.filter((t) => getTime(t) <= endDate);
     }
 
     trades = trades.sort((a, b) => {

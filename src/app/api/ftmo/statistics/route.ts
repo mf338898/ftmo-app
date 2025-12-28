@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebaseAdmin";
-import type { TradeDoc } from "@/lib/firestoreSchemas";
+import type { TradeDoc, WithdrawalDoc } from "@/lib/firestoreSchemas";
 import type { StatisticsKpi, DailySummary } from "@/components/ftmo/types";
 
 export const runtime = "nodejs";
@@ -118,14 +118,34 @@ export async function GET(req: Request) {
       (doc) => ({ ticket: doc.id, ...doc.data() } as TradeDoc),
     );
 
+    const withdrawalsSnap = await db
+      .collection("withdrawals")
+      .where("accountId", "==", accountId)
+      .where("userId", "==", userId)
+      .get();
+    const withdrawals = withdrawalsSnap.docs.map(
+      (doc) => ({ id: doc.id, ...doc.data() }) as WithdrawalDoc,
+    );
+    const totalWithdrawals = withdrawals.reduce(
+      (acc, w) => acc + Math.abs(w.amount),
+      0,
+    );
+
     if (trades.length === 0) {
-      return NextResponse.json({ statistics: null, dailySummary: [] });
+      return NextResponse.json({
+        statistics: null,
+        dailySummary: [],
+        withdrawals,
+      });
     }
 
     const statistics = calculateStatistics(trades, initialBalance);
+    statistics.equity = statistics.equity - totalWithdrawals;
+    statistics.balance = statistics.balance - totalWithdrawals;
+
     const dailySummary = calculateDailySummary(trades);
 
-    return NextResponse.json({ statistics, dailySummary });
+    return NextResponse.json({ statistics, dailySummary, withdrawals });
   } catch (error) {
     if (error instanceof Error && error.message.includes("Firebase admin credentials")) {
       return NextResponse.json(

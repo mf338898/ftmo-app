@@ -8,7 +8,7 @@ import { StatisticsPage } from "./statistics-page";
 import { TradingJournal } from "./trading-journal";
 import { ImportPanel } from "./import-panel";
 import { useDisplayMode } from "./display-mode-context";
-import type { Account, EquityPoint } from "./types";
+import type { Account, EquityPoint, Withdrawal } from "./types";
 
 const fallbackAccounts: Account[] = [
   {
@@ -42,8 +42,16 @@ export function MainDashboard() {
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [equitySeries, setEquitySeries] = useState<EquityPoint[]>([]);
   const [kpis, setKpis] = useState<{ balance: number; equity: number } | null>(null);
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [withdrawalModalOpen, setWithdrawalModalOpen] = useState(false);
+  const [withdrawalForm, setWithdrawalForm] = useState({
+    date: "",
+    amount: "",
+    type: "Récompense 80%",
+    note: "",
+  });
   const { mode, toggleMode } = useDisplayMode();
 
   const fetchAccounts = useCallback(async () => {
@@ -77,6 +85,7 @@ export function MainDashboard() {
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       setEquitySeries(data.equitySeries ?? fallbackEquity);
+      setWithdrawals(data.withdrawals ?? []);
       // Utiliser le solde et l'équité calculés depuis les KPIs (basés sur 160000)
       if (data.kpis) {
         setKpis({
@@ -183,6 +192,25 @@ export function MainDashboard() {
             accountName={activeAccount.name}
             disabled={loading || !selectedAccount}
           />
+          <button
+            onClick={() => setWithdrawalModalOpen(true)}
+            className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition-all hover:bg-blue-100"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            Ajouter un retrait
+          </button>
         </div>
       </div>
 
@@ -262,6 +290,7 @@ export function MainDashboard() {
           <Tab.Panel>
             <EquityChart
               series={equitySeries}
+              withdrawals={withdrawals}
               account={{
                 ...activeAccount,
                 // Utiliser le solde et l'équité calculés depuis les KPIs (basés sur 160000)
@@ -286,6 +315,118 @@ export function MainDashboard() {
           </Tab.Panel>
         </Tab.Panels>
       </Tab.Group>
+
+      {withdrawalModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-900">Ajouter un retrait</h3>
+              <button
+                onClick={() => setWithdrawalModalOpen(false)}
+                className="rounded-md p-2 text-slate-500 hover:bg-slate-100"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="text-sm font-medium text-slate-700">Date</label>
+                <input
+                  type="date"
+                  value={withdrawalForm.date}
+                  onChange={(e) =>
+                    setWithdrawalForm((f) => ({ ...f, date: e.target.value }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Montant</label>
+                <input
+                  type="number"
+                  value={withdrawalForm.amount}
+                  onChange={(e) =>
+                    setWithdrawalForm((f) => ({ ...f, amount: e.target.value }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  placeholder="Ex: 2000"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Type / libellé</label>
+                <input
+                  type="text"
+                  value={withdrawalForm.type}
+                  onChange={(e) =>
+                    setWithdrawalForm((f) => ({ ...f, type: e.target.value }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  placeholder="Récompense 80%"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">Note (optionnel)</label>
+                <textarea
+                  value={withdrawalForm.note}
+                  onChange={(e) =>
+                    setWithdrawalForm((f) => ({ ...f, note: e.target.value }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  rows={2}
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setWithdrawalModalOpen(false)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={async () => {
+                  if (!selectedAccount) return;
+                  if (!withdrawalForm.date || !withdrawalForm.amount) {
+                    alert("Date et montant sont requis.");
+                    return;
+                  }
+                  const payload = {
+                    accountId: selectedAccount,
+                    userId: "demo-user",
+                    date: withdrawalForm.date,
+                    amount: Number(withdrawalForm.amount),
+                    type: withdrawalForm.type || "Retrait",
+                    note: withdrawalForm.note || undefined,
+                  };
+                  const res = await fetch("/api/ftmo/withdrawals", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                  });
+                  if (!res.ok) {
+                    alert("Erreur lors de l'enregistrement du retrait.");
+                    return;
+                  }
+                  setWithdrawalModalOpen(false);
+                  setWithdrawalForm({
+                    date: "",
+                    amount: "",
+                    type: "Récompense 80%",
+                    note: "",
+                  });
+                  setRefreshKey((prev) => prev + 1);
+                  await fetchSummary();
+                }}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+              >
+                Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

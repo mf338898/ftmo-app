@@ -145,3 +145,15 @@ export const importSchema = z.object({
   initialBalance: z.number().optional(),
 });
 
+// Retraits (cash out / récompense)
+export type WithdrawalDoc = {
+  id?: string;
+  userId: string;
+  accountId: string;
+  date: string; // ISO string
+  amount: number;
+  type?: string; // ex: "Récompense 80%"
+  note?: string;
+  createdAt?: Date;
+};
+

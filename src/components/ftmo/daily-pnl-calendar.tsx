@@ -16,7 +16,8 @@ import {
 import { fr } from "date-fns/locale";
 import clsx from "clsx";
 import { useDisplayMode, formatValue } from "./display-mode-context";
-import type { MonthlyStats, DailyPnlEntry } from "./types";
+import { DayDetailsModal } from "./day-details-modal";
+import type { MonthlyStats, DailyPnlEntry, Withdrawal } from "./types";
 
 const weekDays = ["LUN.", "MAR.", "MER.", "JEU.", "VEND.", "SAM", "DIM"];
 
@@ -31,8 +32,13 @@ export function DailyPnlCalendar({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [stats, setStats] = useState<MonthlyStats | null>(null);
   const [dailyPnl, setDailyPnl] = useState<DailyPnlEntry[]>([]);
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [modalDate, setModalDate] = useState<Date | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [internalRefreshKey, setInternalRefreshKey] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -44,27 +50,50 @@ export function DailyPnlCalendar({
         if (!res.ok) {
           setStats({ totalPnl: 0, tradingDays: 0 });
           setDailyPnl([]);
+          setWithdrawals([]);
           return;
         }
         const data = await res.json();
         setStats(data.stats ?? { totalPnl: 0, tradingDays: 0 });
         setDailyPnl(data.dailyPnl ?? []);
+        setWithdrawals(data.withdrawals ?? []);
       } catch (error) {
         console.error("Error fetching monthly stats:", error);
         setStats({ totalPnl: 0, tradingDays: 0 });
         setDailyPnl([]);
+        setWithdrawals([]);
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, [accountId, currentMonth, refreshKey]);
+  }, [accountId, currentMonth, refreshKey, internalRefreshKey]);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
   const pnlByDate = new Map(dailyPnl.map((entry) => [entry.date, entry]));
+  const withdrawalsByDate = new Map(
+    withdrawals.map((w) => [w.date.split("T")[0], w]),
+  );
+
+  const handleDeleteWithdrawal = async (w: Withdrawal) => {
+    if (!w.id) return;
+    setDeletingId(w.id);
+    try {
+      await fetch(
+        `/api/ftmo/withdrawals?id=${w.id}&accountId=${accountId}&userId=demo-user`,
+        { method: "DELETE" },
+      );
+      // rafraîchir
+      setInternalRefreshKey((prev) => prev + 1);
+    } catch (e) {
+      console.error("Delete withdrawal failed", e);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const getDayPnl = (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
@@ -190,11 +219,21 @@ export function DailyPnlCalendar({
             const isSelected = selectedDate && isSameDay(day, selectedDate);
             const isCurrentDay = isToday(day);
             const hasTrading = dayPnl !== undefined;
+            const dateStr = format(day, "yyyy-MM-dd");
+            const dayWithdrawal = withdrawalsByDate.get(dateStr);
+            const hasData = hasTrading || !!dayWithdrawal;
 
             return (
               <button
                 key={day.toISOString()}
-                onClick={() => setSelectedDate(day)}
+                onClick={() => {
+                  if (hasData) {
+                    setModalDate(day);
+                    setIsModalOpen(true);
+                  } else {
+                    setSelectedDate(day);
+                  }
+                }}
                 className={clsx(
                   "aspect-square rounded-lg border-2 p-2 text-left transition-colors",
                   isSelected
@@ -205,6 +244,8 @@ export function DailyPnlCalendar({
                         ? dayPnl.pnl >= 0
                           ? "border-green-200 bg-green-50"
                           : "border-red-200 bg-red-50"
+                        : dayWithdrawal
+                          ? "border-blue-200 bg-blue-50"
                         : "border-transparent hover:bg-slate-50",
                 )}
               >
@@ -226,6 +267,51 @@ export function DailyPnlCalendar({
                     </div>
                   </div>
                 )}
+                {dayWithdrawal && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteWithdrawal(dayWithdrawal);
+                    }}
+                    className="mt-1 w-full rounded-md bg-blue-50 px-2 py-1 text-left transition hover:bg-blue-100"
+                    disabled={deletingId === dayWithdrawal.id}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-semibold text-blue-700">
+                          {formatValue(
+                            -Math.abs(dayWithdrawal.amount),
+                            mode,
+                            baseCapital,
+                            "EUR",
+                            true,
+                          )}
+                        </div>
+                        <div className="text-[10px] text-blue-600">
+                          {dayWithdrawal.type ?? "Retrait"}
+                        </div>
+                      </div>
+                      {deletingId === dayWithdrawal.id ? (
+                        <span className="text-[10px] text-blue-500">...</span>
+                      ) : (
+                        <svg
+                          className="h-4 w-4 text-blue-500"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                  </button>
+                )}
               </button>
             );
           })}
@@ -245,6 +331,16 @@ export function DailyPnlCalendar({
         Les trades sont affichés à l&apos;heure de la plateforme ce qui peut différer
         du fuseau horaire CE(S)T
       </p>
+
+      <DayDetailsModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setModalDate(null);
+        }}
+        date={modalDate}
+        accountId={accountId}
+      />
     </div>
   );
 }

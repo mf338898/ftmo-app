@@ -1,4 +1,4 @@
-import type { AccountDoc, TradeDoc } from "./firestoreSchemas";
+import type { AccountDoc, TradeDoc, WithdrawalDoc } from "./firestoreSchemas";
 
 export type EquityPoint = {
   time: string;
@@ -67,6 +67,7 @@ const calcAvgRrr = (trades: TradeDoc[]): number => {
 
 export function computeAggregates(
   trades: TradeDoc[],
+  withdrawals: WithdrawalDoc[] = [],
   initialBalance = 160000, // Capital de départ FTMO par défaut
 ): AggregateResult {
   // Séparer les trades fermés et ouverts
@@ -79,6 +80,10 @@ export function computeAggregates(
     const bTime = new Date(b.closeTime ?? "").getTime();
     return aTime - bTime;
   });
+
+  const orderedWithdrawals = [...withdrawals].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
 
   let running = initialBalance;
   let peak = initialBalance;
@@ -106,16 +111,32 @@ export function computeAggregates(
     });
   }
 
-  // Ajouter un point pour chaque trade clôturé (évolution cumulative)
-  orderedClosed.forEach((trade) => {
-    const netProfit = getNetProfit(trade);
-    running += netProfit;
+  // Fusionner événements trades clôturés et retraits
+  type Event =
+    | { kind: "trade"; time: string; delta: number }
+    | { kind: "withdrawal"; time: string; delta: number };
+
+  const events: Event[] = [
+    ...orderedClosed.map((trade) => ({
+      kind: "trade" as const,
+      time: trade.closeTime ?? trade.openTime ?? new Date().toISOString(),
+      delta: getNetProfit(trade),
+    })),
+    ...orderedWithdrawals.map((w) => ({
+      kind: "withdrawal" as const,
+      time: w.date,
+      delta: -Math.abs(w.amount), // retrait = diminution de cash, pas une perte de trade
+    })),
+  ].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+  events.forEach((event) => {
+    running += event.delta;
     peak = Math.max(peak, running);
     const drawdownPct = peak === 0 ? 0 : ((running - peak) / peak) * 100;
     minDrawdownPct = Math.min(minDrawdownPct, drawdownPct);
 
     equitySeries.push({
-      time: trade.closeTime ?? trade.openTime ?? new Date().toISOString(),
+      time: event.time,
       equity: running,
       drawdownPct,
     });
@@ -154,6 +175,11 @@ export function computeAggregates(
     .filter((t) => t.status === "closed")
     .reduce((acc, t) => acc + getNetProfit(t), 0);
 
+  const totalWithdrawals = orderedWithdrawals.reduce(
+    (acc, w) => acc + Math.abs(w.amount),
+    0,
+  );
+
   const openUnrealized = trades
     .filter((t) => t.status === "open")
     .reduce((acc, t) => acc + (t.currentPnl ?? 0), 0);
@@ -173,8 +199,8 @@ export function computeAggregates(
 
   return {
     kpis: {
-      balance: initialBalance + totalProfit,
-      equity: initialBalance + totalProfit + openUnrealized,
+      balance: initialBalance + totalProfit - totalWithdrawals,
+      equity: initialBalance + totalProfit - totalWithdrawals + openUnrealized,
       unrealizedPnl: openUnrealized,
       drawdownPct: Math.abs(minDrawdownPct),
       profitFactor: calcProfitFactor(trades),

@@ -97,3 +97,14 @@ export type AnalyticsData = {
   bySymbol: Array<{ symbol: string; pnl: number }>;
 };
 
+export type Withdrawal = {
+  id?: string;
+  accountId: string;
+  userId: string;
+  date: string; // ISO string
+  amount: number;
+  type?: string;
+  note?: string;
+  createdAt?: string;
+};
+

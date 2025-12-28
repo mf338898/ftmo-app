@@ -5,6 +5,7 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -14,7 +15,7 @@ import {
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { useDisplayMode, formatValue } from "./display-mode-context";
-import type { EquityPoint, Account } from "./types";
+import type { EquityPoint, Account, Withdrawal } from "./types";
 
 const teal = "#14b8a6";
 const tealLight = "#5eead4";
@@ -34,9 +35,11 @@ const formatDate = (value: string) => {
 export function EquityChart({
   series,
   account,
+  withdrawals = [],
 }: {
   series: EquityPoint[];
   account: Account;
+  withdrawals?: Withdrawal[];
   refreshKey?: number;
 }) {
   const { mode, baseCapital } = useDisplayMode();
@@ -94,6 +97,24 @@ export function EquityChart({
     }
     return formatValue(v, "absolute", baseCapital, account.currency ?? "EUR");
   };
+
+  // Préparer les marqueurs de retraits
+  const withdrawalMarkers = withdrawals
+    .map((w) => {
+      const t = new Date(w.date).getTime();
+      const point =
+        data.find((p) => new Date(p.time).getTime() === t) ??
+        data.find((p) => new Date(p.time).getTime() >= t) ??
+        data[data.length - 1];
+      if (!point) return null;
+      return {
+        time: point.time,
+        y: point.equity,
+        label: w.type ?? "Retrait",
+        amount: w.amount,
+      };
+    })
+    .filter(Boolean) as Array<{ time: string; y: number; label: string; amount: number }>;
 
   return (
     <div className="relative rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -190,6 +211,28 @@ export function EquityChart({
               dot={false}
               activeDot={{ r: 6, fill: teal }}
             />
+
+            {withdrawalMarkers.map((m, idx) => (
+              <ReferenceDot
+                key={`wd-${idx}`}
+                x={m.time}
+                y={m.y}
+                r={6}
+                stroke={blue}
+                fill="#fff"
+                strokeWidth={2}
+                ifOverflow="discard"
+                label={{
+                  value:
+                    mode === "percentage"
+                      ? `${((m.amount / baseCapital) * 100).toFixed(2)}%`
+                      : formatValue(-Math.abs(m.amount), "absolute", baseCapital, account.currency ?? "EUR", true),
+                  position: "top",
+                  fill: blue,
+                  fontSize: 12,
+                }}
+              />
+            ))}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebaseAdmin";
-import type { TradeDoc } from "@/lib/firestoreSchemas";
+import type { TradeDoc, WithdrawalDoc } from "@/lib/firestoreSchemas";
 import type { MonthlyStats, DailyPnlEntry } from "@/components/ftmo/types";
 import { startOfMonth, endOfMonth, format } from "date-fns";
 
@@ -44,10 +44,24 @@ export async function GET(req: Request) {
       (doc) => ({ ticket: doc.id, ...doc.data() } as TradeDoc),
     );
 
+    const withdrawalsSnap = await db
+      .collection("withdrawals")
+      .where("accountId", "==", accountId)
+      .where("userId", "==", userId)
+      .get();
+    const withdrawals = withdrawalsSnap.docs.map(
+      (doc) => ({ id: doc.id, ...doc.data() }) as WithdrawalDoc,
+    );
+
     const monthTrades = trades.filter((t) => {
       if (!t.closeTime) return false;
       const closeDate = new Date(t.closeTime);
       return closeDate >= monthStart && closeDate <= monthEnd;
+    });
+
+    const monthWithdrawals = withdrawals.filter((w) => {
+      const d = new Date(w.date);
+      return d >= monthStart && d <= monthEnd;
     });
 
     const totalPnl = monthTrades.reduce((acc, t) => acc + getNetProfit(t), 0);
@@ -76,7 +90,7 @@ export async function GET(req: Request) {
       tradingDays,
     };
 
-    return NextResponse.json({ stats, dailyPnl });
+    return NextResponse.json({ stats, dailyPnl, withdrawals: monthWithdrawals });
   } catch (error) {
     if (error instanceof Error && error.message.includes("Firebase admin credentials")) {
       return NextResponse.json(

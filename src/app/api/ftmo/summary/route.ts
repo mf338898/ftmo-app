@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebaseAdmin";
-import type { AccountDoc, TradeDoc } from "@/lib/firestoreSchemas";
+import type { AccountDoc, TradeDoc, WithdrawalDoc } from "@/lib/firestoreSchemas";
 import { computeAggregates } from "@/lib/stats";
 
 export const runtime = "nodejs";
@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const accountId = searchParams.get("accountId");
+  const userId = searchParams.get("userId") ?? "demo-user";
   const periodStart = searchParams.get("start");
   const periodEnd = searchParams.get("end");
 
@@ -24,11 +25,21 @@ export async function GET(req: Request) {
     const tradesQuery = db
       .collection("trades")
       .where("accountId", "==", accountId)
-      .where("userId", "==", "demo-user");
+      .where("userId", "==", userId);
 
     const tradesSnap = await tradesQuery.get();
     let trades = tradesSnap.docs.map(
       (doc) => ({ ticket: doc.id, ...doc.data() }) as TradeDoc,
+    );
+
+    // Récupérer les retraits de ce compte
+    const withdrawalsSnap = await db
+      .collection("withdrawals")
+      .where("accountId", "==", accountId)
+      .where("userId", "==", userId)
+      .get();
+    const withdrawals = withdrawalsSnap.docs.map(
+      (doc) => ({ id: doc.id, ...doc.data() }) as WithdrawalDoc,
     );
 
     if (periodStart) {
@@ -49,15 +60,13 @@ export async function GET(req: Request) {
     // Ignorer initialBalance du compte s'il est différent pour garantir la cohérence
     const initialBalance = 160000;
     
-    const aggregates = computeAggregates(
-      trades,
-      initialBalance,
-    );
+    const aggregates = computeAggregates(trades, [], initialBalance);
 
     return NextResponse.json({
       account,
       kpis: aggregates.kpis,
       equitySeries: aggregates.equitySeries,
+      withdrawals,
       counts: {
         open: trades.filter((t) => t.status === "open").length,
         closed: trades.filter((t) => t.status === "closed").length,
@@ -65,19 +74,27 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes("Firebase admin credentials")) {
-      return NextResponse.json({
+      return NextResponse.json(
+        {
+          account: null,
+          kpis: null,
+          equitySeries: [],
+          withdrawals: [],
+          counts: { open: 0, closed: 0 },
+        },
+        { status: 200 },
+      );
+    }
+    return NextResponse.json(
+      {
         account: null,
         kpis: null,
         equitySeries: [],
+        withdrawals: [],
         counts: { open: 0, closed: 0 },
-      }, { status: 200 });
-    }
-    return NextResponse.json({
-      account: null,
-      kpis: null,
-      equitySeries: [],
-      counts: { open: 0, closed: 0 },
-    }, { status: 200 });
+      },
+      { status: 200 },
+    );
   }
 }
 
