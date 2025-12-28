@@ -1,0 +1,292 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { Tab } from "@headlessui/react";
+import clsx from "clsx";
+import { EquityChart } from "./equity-chart";
+import { StatisticsPage } from "./statistics-page";
+import { TradingJournal } from "./trading-journal";
+import { ImportPanel } from "./import-panel";
+import { useDisplayMode } from "./display-mode-context";
+import type { Account, EquityPoint } from "./types";
+
+const fallbackAccounts: Account[] = [
+  {
+    id: "demo-account",
+    name: "FTMO Challenge",
+    accountType: "challenge",
+    platform: "mt5",
+    size: 160000,
+    currency: "EUR",
+    startDate: "2024-10-01T00:00:00Z",
+    endDate: "2024-12-31T00:00:00Z",
+    balance: 166290.12,
+    equity: 166290.12,
+    drawdownPct: 3.2,
+    profitFactor: 3.63,
+    avgRrr: 1.04,
+  },
+];
+
+const fallbackEquity: EquityPoint[] = [
+  { time: "2024-12-17T00:07:00Z", equity: 160000, drawdownPct: 0 },
+  { time: "2024-12-18T04:05:00Z", equity: 160800, drawdownPct: -0.5 },
+  { time: "2024-12-19T12:00:00Z", equity: 162450, drawdownPct: -0.3 },
+  { time: "2024-12-20T15:30:00Z", equity: 163200, drawdownPct: -0.2 },
+  { time: "2024-12-21T10:15:00Z", equity: 164500, drawdownPct: -0.1 },
+  { time: "2024-12-25T23:44:00Z", equity: 166290.12, drawdownPct: -0.05 },
+];
+
+export function MainDashboard() {
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
+  const [equitySeries, setEquitySeries] = useState<EquityPoint[]>([]);
+  const [kpis, setKpis] = useState<{ balance: number; equity: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { mode, toggleMode } = useDisplayMode();
+
+  const fetchAccounts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ftmo/accounts?userId=demo-user");
+      if (!res.ok) throw new Error("Impossible de charger les comptes.");
+      const data = (await res.json()) as { accounts: Account[] };
+      const list = data.accounts.length ? data.accounts : fallbackAccounts;
+      setAccounts(list);
+      if (!selectedAccount && list.length > 0) {
+        // Prioriser un compte avec des données (balance/equity > 0)
+        const accountWithData = list.find(a => (a.balance ?? 0) > 0 || (a.equity ?? 0) > 0);
+        setSelectedAccount(accountWithData?.id ?? list[0]?.id ?? null);
+      }
+    } catch {
+      setAccounts(fallbackAccounts);
+      if (!selectedAccount) {
+        setSelectedAccount(fallbackAccounts[0]?.id ?? null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedAccount]);
+
+  const fetchSummary = useCallback(async () => {
+    if (!selectedAccount) return;
+    try {
+      const res = await fetch(
+        `/api/ftmo/summary?accountId=${selectedAccount}&userId=demo-user`,
+      );
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data = await res.json();
+      setEquitySeries(data.equitySeries ?? fallbackEquity);
+      // Utiliser le solde et l'équité calculés depuis les KPIs (basés sur 160000)
+      if (data.kpis) {
+        setKpis({
+          balance: data.kpis.balance,
+          equity: data.kpis.equity,
+        });
+      } else {
+        setKpis(null);
+      }
+    } catch {
+      setEquitySeries(fallbackEquity);
+      setKpis(null);
+    }
+  }, [selectedAccount]);
+
+  useEffect(() => {
+    fetchAccounts();
+  }, [fetchAccounts]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary, refreshKey]);
+
+  const handleImport = useCallback(
+    async (file: File) => {
+      let accountIdToUse = selectedAccount;
+      
+      // Si aucun compte n'est sélectionné, utiliser le premier compte ou créer un nouveau
+      if (!accountIdToUse) {
+        if (accounts.length > 0) {
+          accountIdToUse = accounts[0].id;
+          setSelectedAccount(accountIdToUse);
+        } else {
+          accountIdToUse = `account-${Date.now()}`;
+          setSelectedAccount(accountIdToUse);
+        }
+      }
+
+      const form = new FormData();
+      form.append("file", file);
+      form.append("accountId", accountIdToUse);
+      form.append(
+        "accountName",
+        accounts.find((a) => a.id === accountIdToUse)?.name ?? "FTMO Account",
+      );
+      form.append("userId", "demo-user");
+      form.append("accountType", "challenge");
+      form.append("platform", "mt5");
+      form.append("currency", "EUR");
+
+      const res = await fetch("/api/ftmo/import", {
+        method: "POST",
+        body: form,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const errorMsg =
+          typeof body.error === "string"
+            ? body.error
+            : body.error?.message ?? "Import impossible";
+        throw new Error(errorMsg);
+      }
+
+      const result = await res.json();
+      // Mettre à jour le refreshKey pour forcer le rafraîchissement
+      setRefreshKey((prev) => prev + 1);
+      // Recharger les comptes et le résumé
+      await fetchAccounts();
+      // Attendre un peu pour que les données soient disponibles
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await fetchSummary();
+      return result;
+    },
+    [selectedAccount, accounts, fetchAccounts, fetchSummary],
+  );
+
+  const activeAccount =
+    accounts.find((acc) => acc.id === selectedAccount) ?? fallbackAccounts[0];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <p className="text-slate-500">Chargement...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Tableau de bord FTMO</h1>
+          <p className="text-sm text-slate-600">
+            Compte: {activeAccount.name}{" "}
+            {activeAccount.size
+              ? `(${activeAccount.size.toLocaleString()} ${activeAccount.currency})`
+              : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <ImportPanel
+            onImport={handleImport}
+            accountName={activeAccount.name}
+            disabled={loading || !selectedAccount}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <span>
+            Affichage en pourcentage basé sur le dépôt initial de{" "}
+            <span className="font-semibold text-slate-900">160 000 €</span>
+          </span>
+        </div>
+        {mode === "percentage" && (
+          <button
+            onClick={toggleMode}
+            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50"
+            title="Afficher en euros"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            Afficher en €
+          </button>
+        )}
+        {mode === "absolute" && (
+          <button
+            onClick={toggleMode}
+            className="flex items-center gap-2 rounded-lg border-2 border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700"
+            title="Afficher en pourcentage"
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+              />
+            </svg>
+            Afficher en %
+          </button>
+        )}
+      </div>
+
+      <Tab.Group>
+        <Tab.List className="flex gap-1 border-b border-slate-200">
+          {["Graphique d'équité", "Statistiques", "Journal de Trading"].map((label) => (
+            <Tab
+              key={label}
+              className={({ selected }) =>
+                clsx(
+                  "px-4 py-2 text-sm font-semibold transition-colors",
+                  selected
+                    ? "border-b-2 border-blue-600 text-blue-600"
+                    : "text-slate-500 hover:text-slate-700",
+                )
+              }
+            >
+              {label}
+            </Tab>
+          ))}
+        </Tab.List>
+
+        <Tab.Panels className="mt-6">
+          <Tab.Panel>
+            <EquityChart
+              series={equitySeries}
+              account={{
+                ...activeAccount,
+                // Utiliser le solde et l'équité calculés depuis les KPIs (basés sur 160000)
+                balance: kpis?.balance ?? activeAccount.balance,
+                equity: kpis?.equity ?? activeAccount.equity,
+              }}
+              refreshKey={refreshKey}
+            />
+          </Tab.Panel>
+          <Tab.Panel>
+            <StatisticsPage
+              accountId={selectedAccount ?? "demo-account"}
+              currencyCode={activeAccount.currency ?? "EUR"}
+              refreshKey={refreshKey}
+            />
+          </Tab.Panel>
+          <Tab.Panel>
+            <TradingJournal
+              accountId={selectedAccount ?? "demo-account"}
+              refreshKey={refreshKey}
+            />
+          </Tab.Panel>
+        </Tab.Panels>
+      </Tab.Group>
+    </div>
+  );
+}
+

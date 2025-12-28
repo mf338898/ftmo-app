@@ -1,36 +1,100 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FTMO Split Screen Dashboard
 
-## Getting Started
+Application Next.js pour visualiser et analyser vos comptes et trades FTMO.
 
-First, run the development server:
+## 🚀 Démarrage rapide
+
+### 1. Installation des dépendances
+
+```bash
+npm install
+```
+
+### 2. Configuration Firebase (pour l'import réel)
+
+**📖 Guide complet :** Voir [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) pour un guide détaillé étape par étape.
+
+**Résumé rapide :**
+
+1. Créez un fichier `.env.local` à la racine du projet :
+   ```bash
+   cp .env.example .env.local
+   ```
+
+2. Configurez Firebase :
+   - Allez sur [Firebase Console](https://console.firebase.google.com/)
+   - Créez un projet (ou utilisez `ftmo-journal-web`)
+   - Activez Firestore Database
+   - Allez dans Project Settings > Service Accounts
+   - Générez une nouvelle clé privée (fichier JSON)
+   - Copiez les valeurs dans `.env.local` :
+     - `project_id` → `FIREBASE_PROJECT_ID`
+     - `client_email` → `FIREBASE_CLIENT_EMAIL`
+     - `private_key` → `FIREBASE_PRIVATE_KEY` (avec guillemets)
+
+3. Redémarrez le serveur après avoir créé `.env.local`
+
+### 3. Lancer l'application
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Ouvrez [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📊 Fonctionnalités
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Mode Démonstration (sans Firebase)
+- ✅ **Design et interface** : Fonctionne avec des données de démonstration
+- ✅ **Visualisation** : Graphiques, tableaux, KPIs
+- ✅ **Navigation** : Tous les composants sont interactifs
 
-## Learn More
+### Mode Complet (avec Firebase configuré)
+- ✅ **Import CSV/XLSX** : Importez vos exports FTMO
+- ✅ **Stockage Firestore** : Données persistées dans Firebase
+- ✅ **Déduplication** : Évite les doublons par Ticket
+- ✅ **Statistiques** : Calcul automatique des agrégats
 
-To learn more about Next.js, take a look at the following resources:
+## 📁 Format des fichiers d'import
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+L'application attend des fichiers CSV ou XLSX avec les colonnes suivantes (mapping par défaut FTMO) :
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `Ticket` : Identifiant unique du trade
+- `Ouvrir` : Date/heure d'ouverture
+- `Type` : buy/sell
+- `Volume` : Taille du trade
+- `Symbole` : Paire de devises (ex: EURUSD, XAUUSD)
+- `Prix` : Prix d'ouverture
+- `SL` : Stop Loss
+- `TP` : Take Profit
+- `Fermeture` : Date/heure de clôture
+- `Prix.1` : Prix de clôture
+- `Swap`, `Commissions`, `Profit`, `Pips` : Valeurs financières
+- `Durée` : Durée en secondes
 
-## Deploy on Vercel
+## 🎨 Design
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+L'interface reproduit le style FTMO avec :
+- Palette de couleurs bleue FTMO (`#1f6ff2`)
+- Layout split-screen (60/40 sur desktop)
+- Graphiques interactifs (Recharts)
+- Tableaux triables et filtrables (TanStack Table)
+- Responsive (mobile/tablet/desktop)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🔧 Technologies
+
+- **Next.js 16** (App Router)
+- **TypeScript**
+- **Firebase** (Firestore + Admin SDK)
+- **Recharts** (Graphiques)
+- **TanStack Table** (Tableaux)
+- **Tailwind CSS** (Styling)
+- **PapaParse** (CSV parsing)
+- **XLSX** (Excel parsing)
+
+## 📝 Notes
+
+- L'application fonctionne en mode démo sans Firebase
+- L'import réel nécessite les credentials Firebase Admin
+- Les données sont stockées dans Firestore avec `userId: "demo-user"` par défaut
+- Pour plusieurs utilisateurs, activez Firebase Auth (voir `src/lib/useAuth.ts`)
