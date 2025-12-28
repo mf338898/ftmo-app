@@ -152,8 +152,8 @@ export async function POST(req: Request) {
       accountType,
       size,
       platform,
-      startDate,
-      endDate,
+      startDate: startDate ?? undefined,
+      endDate: endDate ?? undefined,
       currency,
       initialBalance: 160000, // Toujours 160000 pour la cohérence
       lastImportId: undefined,
