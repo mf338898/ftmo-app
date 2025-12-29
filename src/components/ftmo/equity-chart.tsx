@@ -101,11 +101,31 @@ export function EquityChart({
   // Préparer les marqueurs de retraits
   const withdrawalMarkers = withdrawals
     .map((w) => {
-      const t = new Date(w.date).getTime();
-      const point =
-        data.find((p) => new Date(p.time).getTime() === t) ??
-        data.find((p) => new Date(p.time).getTime() >= t) ??
-        data[data.length - 1];
+      const withdrawalTime = new Date(w.date).getTime();
+      // Trouver le point le plus proche dans la série d'équité
+      // Chercher d'abord un point exact, puis le premier point après, sinon le plus proche
+      let point = data.find((p) => {
+        const pTime = new Date(p.time).getTime();
+        // Tolérance de 1 jour pour correspondre à un point
+        return Math.abs(pTime - withdrawalTime) < 24 * 60 * 60 * 1000;
+      });
+      
+      if (!point) {
+        // Si pas de point exact, prendre le premier point après la date du retrait
+        point = data.find((p) => new Date(p.time).getTime() >= withdrawalTime);
+      }
+      
+      if (!point) {
+        // Si toujours pas trouvé, prendre le point le plus proche
+        point = data.reduce((closest, p) => {
+          const closestTime = new Date(closest.time).getTime();
+          const pTime = new Date(p.time).getTime();
+          const closestDiff = Math.abs(closestTime - withdrawalTime);
+          const pDiff = Math.abs(pTime - withdrawalTime);
+          return pDiff < closestDiff ? p : closest;
+        }, data[0]);
+      }
+      
       if (!point) return null;
       return {
         time: point.time,

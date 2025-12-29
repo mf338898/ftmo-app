@@ -60,7 +60,7 @@ export async function GET(req: Request) {
     // Ignorer initialBalance du compte s'il est différent pour garantir la cohérence
     const initialBalance = 160000;
     
-    const aggregates = computeAggregates(trades, [], initialBalance);
+    const aggregates = computeAggregates(trades, withdrawals, initialBalance);
 
     return NextResponse.json({
       account,

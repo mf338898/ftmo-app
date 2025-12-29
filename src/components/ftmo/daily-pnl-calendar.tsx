@@ -56,6 +56,8 @@ export function DailyPnlCalendar({
         const data = await res.json();
         setStats(data.stats ?? { totalPnl: 0, tradingDays: 0 });
         setDailyPnl(data.dailyPnl ?? []);
+        // Debug: vérifier les retraits reçus
+        console.log("Retraits reçus pour le mois:", data.withdrawals);
         setWithdrawals(data.withdrawals ?? []);
       } catch (error) {
         console.error("Error fetching monthly stats:", error);
@@ -75,11 +77,35 @@ export function DailyPnlCalendar({
 
   const pnlByDate = new Map(dailyPnl.map((entry) => [entry.date, entry]));
   const withdrawalsByDate = new Map(
-    withdrawals.map((w) => [w.date.split("T")[0], w]),
+    withdrawals.map((w) => {
+      // Normaliser la date : extraire YYYY-MM-DD
+      let dateStr = w.date;
+      if (dateStr.includes("T")) {
+        dateStr = dateStr.split("T")[0];
+      } else if (dateStr.includes(" ")) {
+        dateStr = dateStr.split(" ")[0];
+      }
+      // S'assurer que c'est bien au format YYYY-MM-DD
+      return [dateStr, w];
+    }),
   );
 
   const handleDeleteWithdrawal = async (w: Withdrawal) => {
     if (!w.id) return;
+    
+    // Demander confirmation avant de supprimer
+    const confirmed = window.confirm(
+      `Êtes-vous sûr de vouloir supprimer ce retrait de ${formatValue(
+        -Math.abs(w.amount),
+        mode,
+        baseCapital,
+        "EUR",
+        true,
+      )} ?`
+    );
+    
+    if (!confirmed) return;
+    
     setDeletingId(w.id);
     try {
       await fetch(
@@ -268,17 +294,38 @@ export function DailyPnlCalendar({
                   </div>
                 )}
                 {dayWithdrawal && (
-                  <button
-                    type="button"
+                  <div
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleDeleteWithdrawal(dayWithdrawal);
+                      if (deletingId !== dayWithdrawal.id) {
+                        handleDeleteWithdrawal(dayWithdrawal);
+                      }
                     }}
-                    className="mt-1 w-full rounded-md bg-blue-50 px-2 py-1 text-left transition hover:bg-blue-100"
-                    disabled={deletingId === dayWithdrawal.id}
+                    className={clsx(
+                      "mt-1 w-full rounded-md bg-blue-50 px-2 py-1 text-left transition cursor-pointer",
+                      deletingId === dayWithdrawal.id
+                        ? "opacity-50 cursor-not-allowed"
+                        : "hover:bg-blue-100",
+                    )}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (deletingId !== dayWithdrawal.id) {
+                          handleDeleteWithdrawal(dayWithdrawal);
+                        }
+                      }
+                    }}
                   >
                     <div className="flex items-center justify-between">
-                      <div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9px] font-bold uppercase text-blue-800">
+                            Retrait
+                          </span>
+                        </div>
                         <div className="text-[10px] font-semibold text-blue-700">
                           {formatValue(
                             -Math.abs(dayWithdrawal.amount),
@@ -288,15 +335,26 @@ export function DailyPnlCalendar({
                             true,
                           )}
                         </div>
-                        <div className="text-[10px] text-blue-600">
-                          {dayWithdrawal.type ?? "Retrait"}
+                        <div className="text-[9px] text-blue-600">
+                          {dayWithdrawal.type ?? "Récompense 80%"}
+                          {dayWithdrawal.type?.includes("80%") && (
+                            <span className="ml-1 text-green-600">
+                              ({formatValue(
+                                Math.abs(dayWithdrawal.amount * 0.8),
+                                mode,
+                                baseCapital,
+                                "EUR",
+                                true,
+                              )} reçu)
+                            </span>
+                          )}
                         </div>
                       </div>
                       {deletingId === dayWithdrawal.id ? (
                         <span className="text-[10px] text-blue-500">...</span>
                       ) : (
                         <svg
-                          className="h-4 w-4 text-blue-500"
+                          className="h-4 w-4 text-blue-500 flex-shrink-0"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -310,7 +368,7 @@ export function DailyPnlCalendar({
                         </svg>
                       )}
                     </div>
-                  </button>
+                  </div>
                 )}
               </button>
             );

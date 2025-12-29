@@ -41,14 +41,15 @@ export function MainDashboard() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [equitySeries, setEquitySeries] = useState<EquityPoint[]>([]);
-  const [kpis, setKpis] = useState<{ balance: number; equity: number } | null>(null);
+  const [kpis, setKpis] = useState<{ balance: number; equity: number; totalProfit: number } | null>(null);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [withdrawalModalOpen, setWithdrawalModalOpen] = useState(false);
   const [withdrawalForm, setWithdrawalForm] = useState({
     date: "",
-    amount: "",
+    amountReceived: "", // Montant reçu (80%)
+    amountReal: "", // Montant réel retiré (100%)
     type: "Récompense 80%",
     note: "",
   });
@@ -91,6 +92,7 @@ export function MainDashboard() {
         setKpis({
           balance: data.kpis.balance,
           equity: data.kpis.equity,
+          totalProfit: data.kpis.totalProfit ?? 0,
         });
       } else {
         setKpis(null);
@@ -108,6 +110,17 @@ export function MainDashboard() {
   useEffect(() => {
     fetchSummary();
   }, [fetchSummary, refreshKey]);
+
+  const todayIso = () => new Date().toISOString().split("T")[0];
+  const defaultWithdrawalAmount = () => {
+    const gains = Math.max(kpis?.totalProfit ?? 0, 0);
+    // Par défaut, on retire 80% des gains actuels (montant reçu)
+    const amountReceived = gains * 0.8;
+    return {
+      amountReceived: amountReceived.toFixed(2),
+      amountReal: (amountReceived / 0.8).toFixed(2),
+    };
+  };
 
   const handleImport = useCallback(
     async (file: File) => {
@@ -192,8 +205,18 @@ export function MainDashboard() {
             accountName={activeAccount.name}
             disabled={loading || !selectedAccount}
           />
-          <button
-            onClick={() => setWithdrawalModalOpen(true)}
+            <button
+              onClick={() => {
+                const defaults = defaultWithdrawalAmount();
+                setWithdrawalForm({
+                  date: todayIso(),
+                  amountReceived: defaults.amountReceived,
+                  amountReal: defaults.amountReal,
+                  type: "Récompense 80%",
+                  note: "",
+                });
+                setWithdrawalModalOpen(true);
+              }}
             className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition-all hover:bg-blue-100"
           >
             <svg
@@ -210,6 +233,44 @@ export function MainDashboard() {
               />
             </svg>
             Ajouter un retrait
+          </button>
+          <button
+            onClick={async () => {
+              if (!confirm("Supprimer tous les comptes superflus et ne garder que le compte principal ?")) {
+                return;
+              }
+              try {
+                const res = await fetch("/api/ftmo/cleanup", { method: "POST" });
+                const data = await res.json();
+                if (res.ok) {
+                  alert(`Nettoyage terminé !\n${data.message}\n${data.deletedAccounts} compte(s) supprimé(s).`);
+                  setRefreshKey((prev) => prev + 1);
+                  await fetchAccounts();
+                  await fetchSummary();
+                } else {
+                  alert(`Erreur: ${data.error}`);
+                }
+              } catch (error) {
+                alert(`Erreur lors du nettoyage: ${error instanceof Error ? error.message : "Erreur inconnue"}`);
+              }
+            }}
+            className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 shadow-sm transition-all hover:bg-red-100"
+            title="Supprimer tous les comptes sauf le principal"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+            Nettoyer les comptes
           </button>
         </div>
       </div>
@@ -335,7 +396,7 @@ export function MainDashboard() {
                 <label className="text-sm font-medium text-slate-700">Date</label>
                 <input
                   type="date"
-                  value={withdrawalForm.date}
+                  value={withdrawalForm.date || todayIso()}
                   onChange={(e) =>
                     setWithdrawalForm((f) => ({ ...f, date: e.target.value }))
                   }
@@ -343,15 +404,63 @@ export function MainDashboard() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-slate-700">Montant</label>
+                <label className="text-sm font-medium text-slate-700">
+                  Montant reçu (80% du retrait réel)
+                </label>
                 <input
                   type="number"
-                  value={withdrawalForm.amount}
-                  onChange={(e) =>
-                    setWithdrawalForm((f) => ({ ...f, amount: e.target.value }))
-                  }
+                  step="0.01"
+                  value={withdrawalForm.amountReceived || defaultWithdrawalAmount().amountReceived}
+                  onChange={(e) => {
+                    const receivedValue = e.target.value;
+                    const receivedNum = Number(receivedValue);
+                    if (!isNaN(receivedNum) && receivedNum >= 0) {
+                      const realValue = receivedNum / 0.8;
+                      setWithdrawalForm((f) => ({
+                        ...f,
+                        amountReceived: receivedValue,
+                        amountReal: realValue.toFixed(2),
+                      }));
+                    } else {
+                      setWithdrawalForm((f) => ({
+                        ...f,
+                        amountReceived: receivedValue,
+                        amountReal: "",
+                      }));
+                    }
+                  }}
                   className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   placeholder="Ex: 2000"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700">
+                  Montant réel retiré du compte FTMO (100%)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={withdrawalForm.amountReal || defaultWithdrawalAmount().amountReal}
+                  onChange={(e) => {
+                    const realValue = e.target.value;
+                    const realNum = Number(realValue);
+                    if (!isNaN(realNum) && realNum >= 0) {
+                      const receivedValue = realNum * 0.8;
+                      setWithdrawalForm((f) => ({
+                        ...f,
+                        amountReal: realValue,
+                        amountReceived: receivedValue.toFixed(2),
+                      }));
+                    } else {
+                      setWithdrawalForm((f) => ({
+                        ...f,
+                        amountReal: realValue,
+                        amountReceived: "",
+                      }));
+                    }
+                  }}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  placeholder="Ex: 2500"
                 />
               </div>
               <div>
@@ -388,35 +497,58 @@ export function MainDashboard() {
               <button
                 onClick={async () => {
                   if (!selectedAccount) return;
-                  if (!withdrawalForm.date || !withdrawalForm.amount) {
+                  const dateVal = withdrawalForm.date || todayIso();
+                  // Utiliser le montant réel (100%) s'il est renseigné, sinon calculer depuis le montant reçu (80%)
+                  let realWithdrawalAmount: number;
+                  if (withdrawalForm.amountReal && withdrawalForm.amountReal !== "") {
+                    realWithdrawalAmount = Number(withdrawalForm.amountReal);
+                  } else if (withdrawalForm.amountReceived && withdrawalForm.amountReceived !== "") {
+                    realWithdrawalAmount = Number(withdrawalForm.amountReceived) / 0.8;
+                  } else {
+                    const defaults = defaultWithdrawalAmount();
+                    realWithdrawalAmount = Number(defaults.amountReal);
+                  }
+                  
+                  if (!dateVal || isNaN(realWithdrawalAmount) || realWithdrawalAmount <= 0) {
                     alert("Date et montant sont requis.");
                     return;
                   }
+                  
                   const payload = {
                     accountId: selectedAccount,
                     userId: "demo-user",
-                    date: withdrawalForm.date,
-                    amount: Number(withdrawalForm.amount),
-                    type: withdrawalForm.type || "Retrait",
+                    date: dateVal,
+                    amount: realWithdrawalAmount, // Stocker le montant réel (100%)
+                    type: withdrawalForm.type || "Récompense 80%",
                     note: withdrawalForm.note || undefined,
                   };
+                  console.log("Création retrait:", payload);
                   const res = await fetch("/api/ftmo/withdrawals", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
                   });
                   if (!res.ok) {
-                    alert("Erreur lors de l'enregistrement du retrait.");
+                    const errorData = await res.json().catch(() => ({}));
+                    console.error("Erreur création retrait:", errorData);
+                    alert(`Erreur lors de l'enregistrement du retrait: ${errorData.error || "Erreur inconnue"}`);
                     return;
                   }
+                  const result = await res.json();
+                  console.log("Retrait créé avec succès:", result);
                   setWithdrawalModalOpen(false);
+                  const defaults = defaultWithdrawalAmount();
                   setWithdrawalForm({
-                    date: "",
-                    amount: "",
+                    date: todayIso(),
+                    amountReceived: defaults.amountReceived,
+                    amountReal: defaults.amountReal,
                     type: "Récompense 80%",
                     note: "",
                   });
+                  // Forcer le rafraîchissement
                   setRefreshKey((prev) => prev + 1);
+                  // Attendre un peu pour que Firestore propage les données
+                  await new Promise(resolve => setTimeout(resolve, 500));
                   await fetchSummary();
                 }}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"

@@ -161,6 +161,20 @@ export function DayDetailsModal({
 
   const handleDeleteWithdrawal = async (w: Withdrawal) => {
     if (!w.id) return;
+    
+    // Demander confirmation avant de supprimer
+    const confirmed = window.confirm(
+      `Êtes-vous sûr de vouloir supprimer ce retrait de ${formatValue(
+        -Math.abs(w.amount),
+        mode,
+        baseCapital,
+        "EUR",
+        true,
+      )} ?`
+    );
+    
+    if (!confirmed) return;
+    
     setDeletingId(w.id);
     try {
       await fetch(
@@ -315,9 +329,25 @@ export function DayDetailsModal({
                           className="flex items-start justify-between rounded-lg bg-white px-3 py-2 shadow-sm"
                         >
                           <div>
+                            <div className="flex items-center gap-1 mb-1">
+                              <span className="text-xs font-bold uppercase text-blue-800">
+                                Retrait
+                              </span>
+                            </div>
                             <p className="text-sm font-semibold text-blue-800">
-                              {w.type ?? "Retrait"}
+                              {w.type ?? "Récompense 80%"}
                             </p>
+                            {w.type?.includes("80%") && (
+                              <p className="text-xs text-green-600">
+                                {formatValue(
+                                  Math.abs(w.amount * 0.8),
+                                  mode,
+                                  baseCapital,
+                                  "EUR",
+                                  true,
+                                )} reçu sur compte bancaire
+                              </p>
+                            )}
                             {w.note && (
                               <p className="text-xs text-slate-600">{w.note}</p>
                             )}
@@ -326,14 +356,19 @@ export function DayDetailsModal({
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <div className="text-sm font-semibold text-blue-700">
-                              {formatValue(
-                                -Math.abs(w.amount),
-                                mode,
-                                baseCapital,
-                                "EUR",
-                                true,
-                              )}
+                            <div className="text-right">
+                              <div className="text-sm font-semibold text-blue-700">
+                                {formatValue(
+                                  -Math.abs(w.amount),
+                                  mode,
+                                  baseCapital,
+                                  "EUR",
+                                  true,
+                                )}
+                              </div>
+                              <div className="text-xs text-blue-600">
+                                (100% retiré)
+                              </div>
                             </div>
                             <button
                               type="button"

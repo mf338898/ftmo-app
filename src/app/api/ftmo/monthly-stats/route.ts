@@ -52,6 +52,18 @@ export async function GET(req: Request) {
     const withdrawals = withdrawalsSnap.docs.map(
       (doc) => ({ id: doc.id, ...doc.data() }) as WithdrawalDoc,
     );
+    
+    // Debug: vérifier les retraits récupérés
+    console.log(`[monthly-stats] Retraits récupérés pour accountId=${accountId}, userId=${userId}:`, withdrawals.length);
+    if (withdrawals.length > 0) {
+      console.log("[monthly-stats] Exemples de retraits:", withdrawals.slice(0, 3).map(w => ({ id: w.id, date: w.date, amount: w.amount })));
+    }
+    
+    // Debug: vérifier les retraits récupérés
+    console.log(`[monthly-stats] Retraits récupérés pour accountId=${accountId}, userId=${userId}:`, withdrawals.length);
+    if (withdrawals.length > 0) {
+      console.log("[monthly-stats] Exemples de retraits:", withdrawals.slice(0, 3).map(w => ({ id: w.id, date: w.date, amount: w.amount })));
+    }
 
     const monthTrades = trades.filter((t) => {
       if (!t.closeTime) return false;
@@ -60,9 +72,28 @@ export async function GET(req: Request) {
     });
 
     const monthWithdrawals = withdrawals.filter((w) => {
-      const d = new Date(w.date);
-      return d >= monthStart && d <= monthEnd;
+      // Normaliser la date pour la comparaison
+      let dateStr = String(w.date);
+      if (dateStr.includes("T")) {
+        dateStr = dateStr.split("T")[0];
+      } else if (dateStr.includes(" ")) {
+        dateStr = dateStr.split(" ")[0];
+      }
+      // Créer une date à minuit pour la comparaison
+      const [year, month, day] = dateStr.split("-").map(Number);
+      if (!year || !month || !day || isNaN(year) || isNaN(month) || isNaN(day)) {
+        console.warn("[monthly-stats] Date invalide pour retrait:", w.date, w.id);
+        return false;
+      }
+      const d = new Date(year, month - 1, day);
+      const isInMonth = d >= monthStart && d <= monthEnd;
+      if (isInMonth) {
+        console.log(`[monthly-stats] Retrait inclus: ${w.id}, date=${dateStr}, dans le mois ${format(monthStart, "yyyy-MM")}`);
+      }
+      return isInMonth;
     });
+    
+    console.log(`[monthly-stats] Retraits du mois ${format(monthStart, "yyyy-MM")}:`, monthWithdrawals.length);
 
     const totalPnl = monthTrades.reduce((acc, t) => acc + getNetProfit(t), 0);
 
@@ -90,16 +121,18 @@ export async function GET(req: Request) {
       tradingDays,
     };
 
+    console.log(`[monthly-stats] Retours: stats=${JSON.stringify(stats)}, dailyPnl=${dailyPnl.length}, withdrawals=${monthWithdrawals.length}`);
     return NextResponse.json({ stats, dailyPnl, withdrawals: monthWithdrawals });
   } catch (error) {
+    console.error("[monthly-stats] Erreur:", error);
     if (error instanceof Error && error.message.includes("Firebase admin credentials")) {
       return NextResponse.json(
-        { stats: { totalPnl: 0, tradingDays: 0 }, dailyPnl: [] },
+        { stats: { totalPnl: 0, tradingDays: 0 }, dailyPnl: [], withdrawals: [] },
         { status: 200 },
       );
     }
     return NextResponse.json(
-      { stats: { totalPnl: 0, tradingDays: 0 }, dailyPnl: [] },
+      { stats: { totalPnl: 0, tradingDays: 0 }, dailyPnl: [], withdrawals: [] },
       { status: 200 },
     );
   }

@@ -14,7 +14,7 @@ import {
 import clsx from "clsx";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import type { TradeRow } from "./types";
+import type { TradeRow, Withdrawal } from "./types";
 
 const formatDuration = (seconds?: number) => {
   if (!seconds) return "-";
@@ -55,6 +55,9 @@ function PnlPipsCell({ value, isPips = false }: { value: number; isPips?: boolea
   );
 }
 
+// Type mixte pour trades et retraits
+type TableRow = TradeRow | { type: "withdrawal"; withdrawal: Withdrawal };
+
 export function ClosedTradesTable({
   accountId,
   refreshKey = 0,
@@ -62,7 +65,9 @@ export function ClosedTradesTable({
   accountId: string;
   refreshKey?: number;
 }) {
+  const { mode, baseCapital } = useDisplayMode();
   const [trades, setTrades] = useState<TradeRow[]>([]);
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [sorting, setSorting] = useState<SortingState>([
     { id: "closeTime", desc: true },
@@ -71,44 +76,89 @@ export function ClosedTradesTable({
   const [typeFilter, setTypeFilter] = useState<string>("all");
 
   useEffect(() => {
-    const fetchTrades = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch(
+        // Récupérer les trades
+        const tradesRes = await fetch(
           `/api/ftmo/trades?accountId=${accountId}&userId=demo-user&status=closed`,
         );
-        if (!res.ok) {
+        if (tradesRes.ok) {
+          const tradesData = await tradesRes.json();
+          setTrades(tradesData.trades ?? []);
+        } else {
           setTrades([]);
-          return;
         }
-        const data = await res.json();
-        setTrades(data.trades ?? []);
+
+        // Récupérer les retraits
+        const withdrawalsRes = await fetch(
+          `/api/ftmo/withdrawals?accountId=${accountId}&userId=demo-user`,
+        );
+        if (withdrawalsRes.ok) {
+          const withdrawalsData = await withdrawalsRes.json();
+          setWithdrawals(withdrawalsData.withdrawals ?? []);
+        } else {
+          setWithdrawals([]);
+        }
       } catch (error) {
-        console.error("Error fetching trades:", error);
+        console.error("Error fetching data:", error);
         setTrades([]);
+        setWithdrawals([]);
       } finally {
         setLoading(false);
       }
     };
-    fetchTrades();
+    fetchData();
   }, [accountId, refreshKey]);
 
-  const filteredTrades = useMemo(() => {
-    let filtered = trades;
+  // Combiner trades et retraits en une seule liste pour le tableau
+  const allRows = useMemo<TableRow[]>(() => {
+    const rows: TableRow[] = [
+      ...trades.map((t) => ({ ...t })),
+      ...withdrawals.map((w) => ({
+        type: "withdrawal" as const,
+        withdrawal: w,
+      })),
+    ];
+    // Trier par date (closeTime pour trades, date pour retraits)
+    return rows.sort((a, b) => {
+      const aTime = "withdrawal" in a
+        ? new Date(a.withdrawal.date).getTime()
+        : new Date(a.closeTime ?? "").getTime();
+      const bTime = "withdrawal" in b
+        ? new Date(b.withdrawal.date).getTime()
+        : new Date(b.closeTime ?? "").getTime();
+      return bTime - aTime; // Plus récent en premier
+    });
+  }, [trades, withdrawals]);
+
+  const filteredRows = useMemo(() => {
+    let filtered = allRows;
     if (typeFilter !== "all") {
-      filtered = filtered.filter((t) => t.type === typeFilter);
+      filtered = filtered.filter((row) => {
+        if ("withdrawal" in row) return false; // Les retraits ne sont pas filtrés par type de trade
+        return row.type === typeFilter;
+      });
     }
     if (globalFilter) {
       const search = globalFilter.toLowerCase();
-      filtered = filtered.filter(
-        (t) =>
-          t.ticket.toLowerCase().includes(search) ||
-          t.symbol.toLowerCase().includes(search),
-      );
+      filtered = filtered.filter((row) => {
+        if ("withdrawal" in row) {
+          const w = row.withdrawal;
+          return (
+            (w.type ?? "").toLowerCase().includes(search) ||
+            (w.note ?? "").toLowerCase().includes(search)
+          );
+        }
+        return (
+          row.ticket.toLowerCase().includes(search) ||
+          row.symbol.toLowerCase().includes(search)
+        );
+      });
     }
     return filtered;
-  }, [trades, typeFilter, globalFilter]);
+  }, [allRows, typeFilter, globalFilter]);
 
-  const columns: ColumnDef<TradeRow>[] = useMemo(
+  const columns: ColumnDef<TableRow>[] = useMemo(
     () => [
       {
         accessorKey: "ticket",
@@ -128,7 +178,17 @@ export function ClosedTradesTable({
           </div>
         ),
         cell: ({ row }) => {
-          const trade = row.original;
+          const rowData = row.original;
+          if ("withdrawal" in rowData) {
+            const w = rowData.withdrawal;
+            return (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase text-blue-800">Retrait</span>
+                <span className="text-sm font-medium text-slate-900">{w.type ?? "Récompense 80%"}</span>
+              </div>
+            );
+          }
+          const trade = rowData;
           const hasNotes = !!(trade.notes || trade.screenshotUrl);
           return (
             <div className="flex items-center gap-2">
@@ -180,10 +240,16 @@ export function ClosedTradesTable({
         },
       },
       {
-        accessorKey: "closeTime",
+        id: "closeTime",
+        accessorFn: (row) => {
+          if ("withdrawal" in row) {
+            return new Date(row.withdrawal.date).getTime();
+          }
+          return new Date(row.closeTime ?? "").getTime();
+        },
         header: () => (
           <div className="flex items-center gap-1">
-            Heure de clôture
+            Date / Heure
             <button className="text-slate-400 hover:text-slate-600">
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -196,17 +262,27 @@ export function ClosedTradesTable({
             </button>
           </div>
         ),
-        cell: ({ row }) => (
-          <span className="text-sm text-slate-700">
-            {formatCloseTime(row.original.closeTime)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const rowData = row.original;
+          if ("withdrawal" in rowData) {
+            return (
+              <span className="text-sm text-slate-700">
+                {format(new Date(rowData.withdrawal.date), "d MMM yyyy, HH:mm", { locale: fr })}
+              </span>
+            );
+          }
+          return (
+            <span className="text-sm text-slate-700">
+              {formatCloseTime(rowData.closeTime)}
+            </span>
+          );
+        },
       },
       {
         accessorKey: "volume",
         header: () => (
           <div className="flex items-center gap-1">
-            Volume
+            Volume / Détails
             <button className="text-slate-400 hover:text-slate-600">
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -219,9 +295,31 @@ export function ClosedTradesTable({
             </button>
           </div>
         ),
-        cell: ({ row }) => (
-          <span className="text-sm text-slate-700">{row.original.volume}</span>
-        ),
+        cell: ({ row }) => {
+          const rowData = row.original;
+          if ("withdrawal" in rowData) {
+            const w = rowData.withdrawal;
+            return (
+              <div className="text-sm text-slate-700">
+                {w.note && <div className="text-xs text-slate-500">{w.note}</div>}
+                {w.type?.includes("80%") && (
+                  <div className="text-xs text-green-600 mt-1 font-semibold">
+                    {formatValue(
+                      Math.abs(w.amount * 0.8),
+                      mode,
+                      baseCapital,
+                      "EUR",
+                      true,
+                    )} reçu (80%)
+                  </div>
+                )}
+              </div>
+            );
+          }
+          return (
+            <span className="text-sm text-slate-700">{rowData.volume}</span>
+          );
+        },
       },
       {
         accessorKey: "symbol",
@@ -240,32 +338,74 @@ export function ClosedTradesTable({
             </button>
           </div>
         ),
-        cell: ({ row }) => (
-          <span className="text-sm font-medium text-slate-900">{row.original.symbol}</span>
-        ),
+        cell: ({ row }) => {
+          const rowData = row.original;
+          if ("withdrawal" in rowData) {
+            return <span className="text-sm text-slate-400">-</span>;
+          }
+          return (
+            <span className="text-sm font-medium text-slate-900">{rowData.symbol}</span>
+          );
+        },
       },
       {
         accessorKey: "profit",
-        header: "PnL",
-        cell: ({ row }) => (
-          <PnlPipsCell value={row.original.profit ?? 0} />
-        ),
+        header: "Montant",
+        cell: ({ row }) => {
+          const rowData = row.original;
+          if ("withdrawal" in rowData) {
+            const w = rowData.withdrawal;
+            return (
+              <div className="text-right">
+                <div className={clsx(
+                  "inline-block rounded-lg px-2.5 py-1 text-sm font-semibold bg-blue-100 text-blue-700",
+                )}>
+                  {formatValue(
+                    -Math.abs(w.amount),
+                    mode,
+                    baseCapital,
+                    "EUR",
+                    true,
+                  )}
+                </div>
+                <div className="text-xs text-blue-600 mt-1">
+                  (100% retiré)
+                </div>
+              </div>
+            );
+          }
+          return (
+            <PnlPipsCell value={rowData.profit ?? 0} />
+          );
+        },
       },
       {
         accessorKey: "pips",
         header: "Pips",
-        cell: ({ row }) => (
-          <PnlPipsCell value={row.original.pips ?? 0} isPips />
-        ),
+        cell: ({ row }) => {
+          const rowData = row.original;
+          if ("withdrawal" in rowData) {
+            return <span className="text-sm text-slate-400">-</span>;
+          }
+          return (
+            <PnlPipsCell value={rowData.pips ?? 0} isPips />
+          );
+        },
       },
       {
         accessorKey: "durationSeconds",
         header: "Durée",
-        cell: ({ row }) => (
-          <span className="text-sm text-slate-700">
-            {formatDuration(row.original.durationSeconds)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const rowData = row.original;
+          if ("withdrawal" in rowData) {
+            return <span className="text-sm text-slate-400">-</span>;
+          }
+          return (
+            <span className="text-sm text-slate-700">
+              {formatDuration(rowData.durationSeconds)}
+            </span>
+          );
+        },
       },
       {
         id: "actions",
@@ -300,7 +440,7 @@ export function ClosedTradesTable({
   );
 
   const table = useReactTable({
-    data: filteredTrades,
+    data: filteredRows,
     columns,
     state: { sorting, globalFilter },
     onSortingChange: setSorting,
@@ -312,17 +452,31 @@ export function ClosedTradesTable({
 
   const handleExport = () => {
     const csv = [
-      ["Ticket", "Type", "Heure de clôture", "Volume", "Symbole", "PnL", "Pips", "Durée"],
-      ...filteredTrades.map((t) => [
-        t.ticket,
-        t.type,
-        formatCloseTime(t.closeTime),
-        t.volume,
-        t.symbol,
-        t.profit ?? 0,
-        t.pips ?? 0,
-        formatDuration(t.durationSeconds),
-      ]),
+      ["Type", "Date/Heure", "Volume/Détails", "Symbole", "Montant", "Pips", "Durée"],
+      ...filteredRows.map((row) => {
+        if ("withdrawal" in row) {
+          const w = row.withdrawal;
+          return [
+            `Retrait - ${w.type ?? "Récompense 80%"}`,
+            format(new Date(w.date), "d MMM yyyy, HH:mm", { locale: fr }),
+            w.note || "-",
+            "-",
+            w.amount,
+            "-",
+            "-",
+          ];
+        }
+        const t = row;
+        return [
+          t.ticket,
+          formatCloseTime(t.closeTime),
+          t.volume,
+          t.symbol,
+          t.profit ?? 0,
+          t.pips ?? 0,
+          formatDuration(t.durationSeconds),
+        ];
+      }),
     ]
       .map((row) => row.map((cell) => `"${cell}"`).join(","))
       .join("\n");
@@ -428,10 +582,10 @@ export function ClosedTradesTable({
                   ))}
                 </tr>
               ))}
-              {filteredTrades.length === 0 && (
+              {filteredRows.length === 0 && (
                 <tr>
                   <td className="px-4 py-8 text-center text-slate-500" colSpan={8}>
-                    Aucun trade à afficher
+                    Aucun trade ou retrait à afficher
                   </td>
                 </tr>
               )}

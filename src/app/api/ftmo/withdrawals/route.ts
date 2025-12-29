@@ -72,17 +72,31 @@ export async function POST(req: Request) {
       );
     }
 
+    // Helper pour nettoyer les valeurs undefined (Firestore ne les accepte pas)
+    const cleanUndefined = <T extends Record<string, unknown>>(obj: T): T => {
+      const cleaned: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (value !== undefined) {
+          cleaned[key] = value;
+        }
+      }
+      return cleaned as T;
+    };
+
     const doc: WithdrawalDoc = {
       accountId,
       userId,
-      date: new Date(date).toISOString(),
+      // Conserver la date telle que saisie (format YYYY-MM-DD) pour éviter les décalages de fuseau
+      date,
       amount,
       type,
       note,
       createdAt: new Date(),
     };
 
-    const ref = await db.collection(collectionName).add(doc);
+    // Nettoyer les valeurs undefined avant d'envoyer à Firestore
+    const cleanedDoc = cleanUndefined(doc);
+    const ref = await db.collection(collectionName).add(cleanedDoc);
     return NextResponse.json({ id: ref.id, ...doc }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message.includes("Firebase admin credentials")) {
