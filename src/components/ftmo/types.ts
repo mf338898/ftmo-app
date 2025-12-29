@@ -56,6 +56,7 @@ export type TradeRow = {
   mae?: number;
   notes?: string;
   screenshotUrl?: string;
+  tags?: string[];
 };
 
 export type StatisticsKpi = {

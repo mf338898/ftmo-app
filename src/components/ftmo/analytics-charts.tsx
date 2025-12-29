@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentProps,
+} from "react";
 import {
   Bar,
   BarChart,
@@ -16,6 +22,13 @@ import type { AnalyticsData } from "./types";
 
 const teal = "#14b8a6";
 const red = "#ef4444";
+const DEFAULT_ANALYTICS: AnalyticsData = {
+  byHour: [],
+  byType: { buy: 0, sell: 0 },
+  byVolume: [],
+  bySymbol: [],
+};
+const chartMargin = { top: 10, right: 10, left: 10, bottom: 10 };
 
 function ChartCard({
   title,
@@ -32,6 +45,120 @@ function ChartCard({
   );
 }
 
+type FiltersState = {
+  type: string;
+  volume: string;
+  symbol: string;
+};
+
+function TradeFilters({
+  filters,
+  onChange,
+  volumes,
+  symbols,
+}: {
+  filters: FiltersState;
+  onChange: (updater: (prev: FiltersState) => FiltersState) => void;
+  volumes: number[];
+  symbols: string[];
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm font-medium text-slate-700">Filtrer les Trades</span>
+      <select
+        value={filters.type}
+        onChange={(e) => onChange((prev) => ({ ...prev, type: e.target.value }))}
+        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+      >
+        <option value="all">Type</option>
+        <option value="buy">Buy</option>
+        <option value="sell">Sell</option>
+      </select>
+      <select
+        value={filters.volume}
+        onChange={(e) => onChange((prev) => ({ ...prev, volume: e.target.value }))}
+        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+      >
+        <option value="all">Volume</option>
+        {volumes.map((v) => (
+          <option key={v} value={v}>
+            {v}
+          </option>
+        ))}
+      </select>
+      <select
+        value={filters.symbol}
+        onChange={(e) => onChange((prev) => ({ ...prev, symbol: e.target.value }))}
+        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+      >
+        <option value="all">Symbole</option>
+        {symbols.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+type BarChartCardProps = {
+  title: string;
+  data: Array<{ pnl: number; [key: string]: string | number }>;
+  xKey: string;
+  formatPnl: (value: number) => string;
+  xAxisProps?: Partial<ComponentProps<typeof XAxis>>;
+};
+
+function BarChartCard({
+  title,
+  data,
+  xKey,
+  formatPnl,
+  xAxisProps = {},
+}: BarChartCardProps) {
+  return (
+    <ChartCard title={title}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={chartMargin}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+          <XAxis
+            dataKey={xKey}
+            tickLine={false}
+            stroke="#64748b"
+            fontSize={12}
+            {...xAxisProps}
+          />
+          <YAxis
+            tickFormatter={(v) => formatPnl(v as number)}
+            tickLine={false}
+            stroke="#64748b"
+            fontSize={12}
+          />
+          <Tooltip
+            formatter={(value: number | undefined) =>
+              formatPnl(typeof value === "number" ? value : 0)
+            }
+            contentStyle={{
+              backgroundColor: "white",
+              border: "1px solid #e2e8f0",
+              borderRadius: "8px",
+            }}
+          />
+          <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
+            {data.map((entry, index) => (
+              <Cell
+                key={`${title}-${index}`}
+                fill={entry.pnl >= 0 ? teal : red}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
 export function AnalyticsCharts({
   accountId,
   refreshKey = 0,
@@ -42,46 +169,98 @@ export function AnalyticsCharts({
   const { mode, baseCapital } = useDisplayMode();
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [volumeFilter, setVolumeFilter] = useState<string>("all");
-  const [symbolFilter, setSymbolFilter] = useState<string>("all");
+  const [filters, setFilters] = useState<FiltersState>({
+    type: "all",
+    volume: "all",
+    symbol: "all",
+  });
+
+  const formatPnl = useCallback(
+    (value: number) => formatValue(value, mode, baseCapital, "EUR"),
+    [baseCapital, mode],
+  );
+
+  const fetchAnalytics = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/ftmo/analytics?accountId=${accountId}&userId=demo-user`,
+      );
+      if (!res.ok) {
+        setAnalytics(DEFAULT_ANALYTICS);
+        return;
+      }
+      const data = await res.json();
+      setAnalytics(data.analytics ?? DEFAULT_ANALYTICS);
+    } catch (error) {
+      console.error("Error fetching analytics:", error);
+      setAnalytics(DEFAULT_ANALYTICS);
+    } finally {
+      setLoading(false);
+    }
+  }, [accountId]);
 
   useEffect(() => {
-    const fetchAnalytics = async () => {
-      try {
-        const res = await fetch(
-          `/api/ftmo/analytics?accountId=${accountId}&userId=demo-user`,
-        );
-        if (!res.ok) {
-          setAnalytics({
-            byHour: [],
-            byType: { buy: 0, sell: 0 },
-            byVolume: [],
-            bySymbol: [],
-          });
-          return;
-        }
-        const data = await res.json();
-        setAnalytics(data.analytics ?? {
-          byHour: [],
-          byType: { buy: 0, sell: 0 },
-          byVolume: [],
-          bySymbol: [],
-        });
-      } catch (error) {
-        console.error("Error fetching analytics:", error);
-        setAnalytics({
-          byHour: [],
-          byType: { buy: 0, sell: 0 },
-          byVolume: [],
-          bySymbol: [],
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAnalytics();
-  }, [accountId, refreshKey]);
+    void fetchAnalytics();
+  }, [fetchAnalytics, refreshKey]);
+
+  const analyticsData = analytics ?? DEFAULT_ANALYTICS;
+
+  const byHourData = useMemo(
+    () =>
+      analyticsData.byHour.map((item) => ({
+        hour: `${item.hour}:00`,
+        pnl: mode === "percentage" ? (item.pnl / baseCapital) * 100 : item.pnl,
+      })),
+    [analyticsData.byHour, baseCapital, mode],
+  );
+
+  const byTypeData = useMemo(
+    () => [
+      {
+        type: "Sell",
+        pnl:
+          mode === "percentage"
+            ? (analyticsData.byType.sell / baseCapital) * 100
+            : analyticsData.byType.sell,
+      },
+      {
+        type: "Buy",
+        pnl:
+          mode === "percentage"
+            ? (analyticsData.byType.buy / baseCapital) * 100
+            : analyticsData.byType.buy,
+      },
+    ],
+    [analyticsData.byType, baseCapital, mode],
+  );
+
+  const byVolumeData = useMemo(
+    () =>
+      analyticsData.byVolume.map((item) => ({
+        volume: item.volume.toString(),
+        pnl: mode === "percentage" ? (item.pnl / baseCapital) * 100 : item.pnl,
+      })),
+    [analyticsData.byVolume, baseCapital, mode],
+  );
+
+  const bySymbolData = useMemo(
+    () =>
+      analyticsData.bySymbol.map((item) => ({
+        symbol: item.symbol,
+        pnl: mode === "percentage" ? (item.pnl / baseCapital) * 100 : item.pnl,
+      })),
+    [analyticsData.bySymbol, baseCapital, mode],
+  );
+
+  const volumes = useMemo(
+    () => analyticsData.byVolume.map((v) => v.volume),
+    [analyticsData.byVolume],
+  );
+  const symbols = useMemo(
+    () => analyticsData.bySymbol.map((s) => s.symbol),
+    [analyticsData.bySymbol],
+  );
 
   if (loading) {
     return (
@@ -91,223 +270,60 @@ export function AnalyticsCharts({
     );
   }
 
-  if (!analytics) {
-    return (
-      <div className="flex items-center justify-center p-12">
-        <p className="text-slate-500">Aucune donnée disponible</p>
-      </div>
-    );
-  }
-
-  // Convertir les données en pourcentage si nécessaire
-  const byHourData = analytics.byHour.map((item) => ({
-    hour: `${item.hour}:00`,
-    pnl: mode === "percentage" ? (item.pnl / baseCapital) * 100 : item.pnl,
-  }));
-
-  const byTypeData = [
-    { 
-      type: "Sell", 
-      pnl: mode === "percentage" ? (analytics.byType.sell / baseCapital) * 100 : analytics.byType.sell,
-    },
-    { 
-      type: "Buy", 
-      pnl: mode === "percentage" ? (analytics.byType.buy / baseCapital) * 100 : analytics.byType.buy,
-    },
-  ];
-
-  const byVolumeData = analytics.byVolume.map((item) => ({
-    volume: item.volume.toString(),
-    pnl: mode === "percentage" ? (item.pnl / baseCapital) * 100 : item.pnl,
-  }));
-
-  const bySymbolData = analytics.bySymbol.map((item) => ({
-    symbol: item.symbol,
-    pnl: mode === "percentage" ? (item.pnl / baseCapital) * 100 : item.pnl,
-  }));
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-slate-700">Filtrer les Trades</span>
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="all">Type</option>
-            <option value="buy">Buy</option>
-            <option value="sell">Sell</option>
-          </select>
-          <select
-            value={volumeFilter}
-            onChange={(e) => setVolumeFilter(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="all">Volume</option>
-            {analytics.byVolume.map((v) => (
-              <option key={v.volume} value={v.volume}>
-                {v.volume}
-              </option>
-            ))}
-          </select>
-          <select
-            value={symbolFilter}
-            onChange={(e) => setSymbolFilter(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="all">Symbole</option>
-            {analytics.bySymbol.map((s) => (
-              <option key={s.symbol} value={s.symbol}>
-                {s.symbol}
-              </option>
-            ))}
-          </select>
-        </div>
+        <TradeFilters
+          filters={filters}
+          onChange={setFilters}
+          volumes={volumes}
+          symbols={symbols}
+        />
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2">
-        <ChartCard title="Heure d'ouverture">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={byHourData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis
-                dataKey="hour"
-                tickLine={false}
-                stroke="#64748b"
-                fontSize={12}
-                angle={-45}
-                textAnchor="end"
-                height={60}
-              />
-              <YAxis
-                tickFormatter={(v) => formatValue(v as number, mode, baseCapital, "EUR")}
-                tickLine={false}
-                stroke="#64748b"
-                fontSize={12}
-              />
-              <Tooltip
-                formatter={(value: number | undefined) => formatValue(value, mode, baseCapital, "EUR")}
-                contentStyle={{
-                  backgroundColor: "white",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "8px",
-                }}
-              />
-              <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
-                {byHourData.map((entry, index) => (
-                  <Cell key={`cell-hour-${index}`} fill={entry.pnl >= 0 ? teal : red} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
+        <BarChartCard
+          title="Heure d'ouverture"
+          data={byHourData}
+          xKey="hour"
+          formatPnl={formatPnl}
+          xAxisProps={{
+            angle: -45,
+            textAnchor: "end",
+            height: 60,
+          }}
+        />
 
-        <ChartCard title="Achat & Vente">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={byTypeData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis
-                dataKey="type"
-                tickLine={false}
-                stroke="#64748b"
-                fontSize={12}
-              />
-              <YAxis
-                tickFormatter={(v) => formatValue(v as number, mode, baseCapital, "EUR")}
-                tickLine={false}
-                stroke="#64748b"
-                fontSize={12}
-              />
-              <Tooltip
-                formatter={(value: number | undefined) => formatValue(value, mode, baseCapital, "EUR")}
-                contentStyle={{
-                  backgroundColor: "white",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "8px",
-                }}
-              />
-              <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
-                {byTypeData.map((entry, index) => (
-                  <Cell key={`cell-type-${index}`} fill={entry.pnl >= 0 ? teal : red} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
+        <BarChartCard
+          title="Achat & Vente"
+          data={byTypeData}
+          xKey="type"
+          formatPnl={formatPnl}
+        />
 
-        <ChartCard title="Volume">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={byVolumeData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis
-                dataKey="volume"
-                tickLine={false}
-                stroke="#64748b"
-                fontSize={12}
-                angle={-45}
-                textAnchor="end"
-                height={60}
-              />
-              <YAxis
-                tickFormatter={(v) => formatValue(v as number, mode, baseCapital, "EUR")}
-                tickLine={false}
-                stroke="#64748b"
-                fontSize={12}
-              />
-              <Tooltip
-                formatter={(value: number | undefined) => formatValue(value, mode, baseCapital, "EUR")}
-                contentStyle={{
-                  backgroundColor: "white",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "8px",
-                }}
-              />
-              <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
-                {byVolumeData.map((entry, index) => (
-                  <Cell key={`cell-volume-${index}`} fill={entry.pnl >= 0 ? teal : red} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
+        <BarChartCard
+          title="Volume"
+          data={byVolumeData}
+          xKey="volume"
+          formatPnl={formatPnl}
+          xAxisProps={{
+            angle: -45,
+            textAnchor: "end",
+            height: 60,
+          }}
+        />
 
-        <ChartCard title="Symbole">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={bySymbolData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis
-                dataKey="symbol"
-                tickLine={false}
-                stroke="#64748b"
-                fontSize={12}
-                angle={-45}
-                textAnchor="end"
-                height={60}
-              />
-              <YAxis
-                tickFormatter={(v) => formatValue(v as number, mode, baseCapital, "EUR")}
-                tickLine={false}
-                stroke="#64748b"
-                fontSize={12}
-              />
-              <Tooltip
-                formatter={(value: number | undefined) => formatValue(value, mode, baseCapital, "EUR")}
-                contentStyle={{
-                  backgroundColor: "white",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "8px",
-                }}
-              />
-              <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
-                {bySymbolData.map((entry, index) => (
-                  <Cell key={`cell-symbol-${index}`} fill={entry.pnl >= 0 ? teal : red} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
+        <BarChartCard
+          title="Symbole"
+          data={bySymbolData}
+          xKey="symbol"
+          formatPnl={formatPnl}
+          xAxisProps={{
+            angle: -45,
+            textAnchor: "end",
+            height: 60,
+          }}
+        />
       </div>
     </div>
   );

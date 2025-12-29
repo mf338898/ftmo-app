@@ -15,6 +15,12 @@ export async function GET(req: Request) {
   const sortDir = searchParams.get("sortDir") === "desc" ? "desc" : "asc";
   const start = searchParams.get("start");
   const end = searchParams.get("end");
+  const tagsParam = searchParams.getAll("tag");
+  const tagsCsv = searchParams.get("tags");
+  const tagFilters = [
+    ...tagsParam,
+    ...(tagsCsv ? tagsCsv.split(",").map((t) => t.trim()).filter(Boolean) : []),
+  ];
 
   if (!accountId) {
     return NextResponse.json({ error: "Missing accountId" }, { status: 400 });
@@ -52,6 +58,11 @@ export async function GET(req: Request) {
     } else if (resultFilter === "loser") {
       trades = trades.filter((t) => (t.profit ?? 0) < 0);
     }
+    if (tagFilters.length) {
+      trades = trades.filter((t) =>
+        tagFilters.every((tag) => t.tags?.includes(tag)),
+      );
+    }
 
     if (start) {
       const startDate = new Date(start).getTime();
@@ -79,6 +90,51 @@ export async function GET(req: Request) {
       return NextResponse.json({ trades: [] }, { status: 200 });
     }
     return NextResponse.json({ trades: [] }, { status: 200 });
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const body = await req.json();
+    const { ticket, accountId, userId = "demo-user", tags } = body ?? {};
+
+    if (!ticket || !accountId || !Array.isArray(tags)) {
+      return NextResponse.json(
+        { error: "ticket, accountId et tags sont requis" },
+        { status: 400 },
+      );
+    }
+
+    const uniqueTags = Array.from(
+      new Set(
+        tags
+          .map((t) => String(t).trim())
+          .filter((t) => t.length > 0)
+          .slice(0, 20),
+      ),
+    );
+
+    const ref = db.collection("trades").doc(ticket);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return NextResponse.json({ error: "Trade introuvable" }, { status: 404 });
+    }
+    const data = snap.data() as TradeDoc;
+    if (data.accountId !== accountId || data.userId !== userId) {
+      return NextResponse.json({ error: "Accès refusé pour ce trade" }, { status: 403 });
+    }
+
+    await ref.update({
+      tags: uniqueTags,
+      updatedAt: new Date(),
+    });
+
+    return NextResponse.json({ ok: true, tags: uniqueTags });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Erreur interne" },
+      { status: 500 },
+    );
   }
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useDisplayMode, formatValue } from "./display-mode-context";
 import {
   ColumnDef,
@@ -58,6 +58,138 @@ function PnlPipsCell({ value, isPips = false }: { value: number; isPips?: boolea
 // Type mixte pour trades et retraits
 type TableRow = TradeRow | { type: "withdrawal"; withdrawal: Withdrawal };
 
+function TagCell({
+  trade,
+  allTags,
+  onUpdate,
+  onEnsureTag,
+  disabled,
+}: {
+  trade: TradeRow;
+  allTags: string[];
+  onUpdate: (next: string[]) => void;
+  onEnsureTag: (tag: string) => Promise<void>;
+  disabled?: boolean;
+}) {
+  const [newTag, setNewTag] = useState("");
+  const [selectValue, setSelectValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const currentTags = trade.tags ?? [];
+  const availableTags = allTags.filter((t) => !currentTags.includes(t));
+
+  // Debug logs
+  useEffect(() => {
+    console.log("[TagCell] Trade:", trade.ticket, "allTags:", allTags, "availableTags:", availableTags, "currentTags:", currentTags);
+  }, [trade.ticket, allTags, availableTags, currentTags]);
+
+  const addTag = async (tag: string) => {
+    const trimmed = tag.trim();
+    console.log("[TagCell] addTag called with:", trimmed, "currentTags:", currentTags);
+    if (!trimmed || currentTags.includes(trimmed)) {
+      console.log("[TagCell] Tag already exists or empty, skipping");
+      return;
+    }
+    setSaving(true);
+    try {
+      console.log("[TagCell] Ensuring tag exists:", trimmed);
+      await onEnsureTag(trimmed);
+      console.log("[TagCell] Tag ensured, updating trade");
+      onUpdate([...currentTags, trimmed]);
+      setNewTag("");
+      setSelectValue("");
+      console.log("[TagCell] Tag added successfully");
+    } catch (error) {
+      console.error("[TagCell] Add tag failed:", error);
+      alert(
+        `Impossible d'ajouter le tag: ${
+          error instanceof Error ? error.message : "Erreur inconnue"
+        }`,
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeTag = (tag: string) => {
+    onUpdate(currentTags.filter((t) => t !== tag));
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {currentTags.length === 0 && (
+        <span className="text-xs text-slate-400">Aucun tag</span>
+      )}
+      {currentTags.map((tag) => (
+        <button
+          key={tag}
+          onClick={() => removeTag(tag)}
+          disabled={disabled}
+          className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+          title="Supprimer ce tag"
+        >
+          {tag}
+          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      ))}
+      <div className="flex items-center gap-2">
+        <select
+          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+          disabled={disabled || saving}
+          value={selectValue}
+          onChange={(e) => {
+            const selectedTag = e.target.value;
+            console.log("[TagCell] Select changed:", selectedTag, "allTags:", allTags, "availableTags:", availableTags);
+            if (selectedTag && selectedTag.trim()) {
+              console.log("[TagCell] Calling addTag with:", selectedTag);
+              void addTag(selectedTag);
+            }
+            setSelectValue("");
+          }}
+        >
+          <option value="">
+            + Ajouter {availableTags.length > 0 ? `(${availableTags.length})` : allTags.length > 0 ? `(${allTags.length} total)` : ""}
+          </option>
+          {availableTags.length === 0 && allTags.length > 0 && (
+            <option value="" disabled>Tous les tags sont déjà ajoutés</option>
+          )}
+          {availableTags.length === 0 && allTags.length === 0 && (
+            <option value="" disabled>Aucun tag disponible</option>
+          )}
+          {availableTags.map((tag) => (
+            <option key={tag} value={tag}>
+              {tag}
+            </option>
+          ))}
+        </select>
+        <input
+          className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+          placeholder="Nouveau tag"
+          value={newTag}
+          disabled={disabled || saving}
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void addTag(newTag);
+            }
+          }}
+        />
+        <button
+          onClick={() => {
+            void addTag(newTag);
+          }}
+          disabled={disabled || saving || !newTag.trim()}
+          className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {saving ? "..." : "Ajouter"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ClosedTradesTable({
   accountId,
   refreshKey = 0,
@@ -74,41 +206,203 @@ export function ClosedTradesTable({
   ]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [savingTicket, setSavingTicket] = useState<string | null>(null);
 
+  const computeTags = useCallback((list: TradeRow[]) => {
+    return Array.from(
+      new Set(
+        list
+          .map((t) => t.tags ?? [])
+          .flat()
+          .filter((tag): tag is string => typeof tag === "string" && tag.length > 0),
+      ),
+    );
+  }, []);
+
+  const fetchTags = useCallback(async () => {
+    try {
+      console.log("[ClosedTradesTable] Fetching tags for accountId:", accountId);
+      const res = await fetch(
+        `/api/ftmo/tags?accountId=${accountId}&userId=demo-user`,
+      );
+      if (!res.ok) {
+        console.warn("[ClosedTradesTable] Failed to fetch tags, status:", res.status);
+        return [];
+      }
+      const data = await res.json();
+      const apiTags = data.tags ?? [];
+      console.log("[ClosedTradesTable] Fetched tags from API:", apiTags);
+      // Fusionner avec les tags existants (des trades)
+      const tradeTags = computeTags(trades);
+      const merged = Array.from(new Set([...apiTags, ...tradeTags])).sort((a, b) =>
+        a.localeCompare(b, "fr"),
+      );
+      console.log("[ClosedTradesTable] Merged tags:", merged, "apiTags:", apiTags, "tradeTags:", tradeTags);
+      setAllTags(merged);
+      return apiTags;
+    } catch (error) {
+      console.error("[ClosedTradesTable] Error fetching tags:", error);
+      return [];
+    }
+  }, [accountId, trades, computeTags]);
+
+  // Charger les tags et les trades en parallèle, puis fusionner
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchAll = async () => {
       try {
-        // Récupérer les trades
-        const tradesRes = await fetch(
-          `/api/ftmo/trades?accountId=${accountId}&userId=demo-user&status=closed`,
-        );
+        console.log("[ClosedTradesTable] 🔄 Starting fetch for accountId:", accountId, "refreshKey:", refreshKey);
+        setLoading(true);
+        
+        // Charger les tags et les trades en parallèle
+        const [tagsRes, tradesRes, withdrawalsRes] = await Promise.all([
+          fetch(`/api/ftmo/tags?accountId=${accountId}&userId=demo-user`),
+          fetch(`/api/ftmo/trades?accountId=${accountId}&userId=demo-user&status=closed`),
+          fetch(`/api/ftmo/withdrawals?accountId=${accountId}&userId=demo-user`),
+        ]);
+
+        // Traiter les tags
+        let apiTags: string[] = [];
+        if (tagsRes.ok) {
+          const tagsData = await tagsRes.json();
+          apiTags = tagsData.tags ?? [];
+          console.log("[ClosedTradesTable] ✅ Loaded tags from API:", apiTags, "count:", apiTags.length);
+        } else {
+          console.warn("[ClosedTradesTable] ❌ Failed to load tags, status:", tagsRes.status);
+        }
+
+        // Traiter les trades
+        let newTrades: TradeRow[] = [];
         if (tradesRes.ok) {
           const tradesData = await tradesRes.json();
-          setTrades(tradesData.trades ?? []);
+          newTrades = tradesData.trades ?? [];
+          setTrades(newTrades);
+          console.log("[ClosedTradesTable] ✅ Loaded trades:", newTrades.length);
         } else {
           setTrades([]);
         }
 
-        // Récupérer les retraits
-        const withdrawalsRes = await fetch(
-          `/api/ftmo/withdrawals?accountId=${accountId}&userId=demo-user`,
-        );
+        // Traiter les retraits
         if (withdrawalsRes.ok) {
           const withdrawalsData = await withdrawalsRes.json();
           setWithdrawals(withdrawalsData.withdrawals ?? []);
         } else {
           setWithdrawals([]);
         }
+
+        // Fusionner tous les tags (API + trades) en une seule fois
+        const tradeTags = computeTags(newTrades);
+        const allTagsMerged = Array.from(
+          new Set([...apiTags, ...tradeTags]),
+        ).sort((a, b) => a.localeCompare(b, "fr"));
+        console.log("[ClosedTradesTable] ✅ Setting allTags to:", allTagsMerged, "apiTags:", apiTags, "tradeTags:", tradeTags);
+        setAllTags(allTagsMerged);
       } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("[ClosedTradesTable] ❌ Error fetching data:", error);
         setTrades([]);
         setWithdrawals([]);
       } finally {
         setLoading(false);
       }
     };
-    fetchData();
-  }, [accountId, refreshKey]);
+    void fetchAll();
+  }, [accountId, refreshKey, computeTags]);
+
+  // Ne pas synchroniser automatiquement ici car on le fait déjà dans le fetch principal
+  // Cela évite les conflits de mise à jour
+
+  const updateTradeTags = useCallback(
+    async (trade: TradeRow, nextTags: string[]) => {
+      setSavingTicket(trade.ticket);
+      try {
+        const res = await fetch("/api/ftmo/trades", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ticket: trade.ticket,
+            accountId,
+            userId: "demo-user",
+            tags: nextTags,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? "Impossible de mettre à jour les tags");
+        }
+
+        setTrades((prev) => {
+          const updated = prev.map((t) =>
+            t.ticket === trade.ticket ? { ...t, tags: nextTags } : t,
+          );
+          setAllTags((prevTags) =>
+            Array.from(
+              new Set([...prevTags, ...nextTags]),
+            ).sort((a, b) => a.localeCompare(b, "fr")),
+          );
+          return updated;
+        });
+      } catch (error) {
+        console.error("Update tags failed:", error);
+        alert(
+          `Impossible de mettre à jour les tags: ${
+            error instanceof Error ? error.message : "Erreur inconnue"
+          }`,
+        );
+      } finally {
+        setSavingTicket(null);
+      }
+    },
+    [accountId],
+  );
+
+  const ensureTagExists = useCallback(
+    async (tag: string) => {
+      console.log("[ClosedTradesTable] ensureTagExists called with:", tag);
+      const res = await fetch("/api/ftmo/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId,
+          userId: "demo-user",
+          name: tag,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error("[ClosedTradesTable] Failed to create tag:", body);
+        throw new Error(body.error ?? "Impossible d'enregistrer le tag");
+      }
+      const result = await res.json();
+      console.log("[ClosedTradesTable] Tag created successfully:", result);
+      // Ajouter immédiatement le tag à la liste
+      setAllTags((prev) => {
+        const updated = Array.from(new Set([...prev, tag])).sort((a, b) =>
+          a.localeCompare(b, "fr"),
+        );
+        console.log("[ClosedTradesTable] Updated allTags immediately:", updated);
+        return updated;
+      });
+      // Recharger depuis l'API pour être sûr
+      try {
+        const tagsRes = await fetch(
+          `/api/ftmo/tags?accountId=${accountId}&userId=demo-user`,
+        );
+        if (tagsRes.ok) {
+          const tagsData = await tagsRes.json();
+          const apiTags = tagsData.tags ?? [];
+          const tradeTags = computeTags(trades);
+          const merged = Array.from(new Set([...apiTags, ...tradeTags])).sort((a, b) =>
+            a.localeCompare(b, "fr"),
+          );
+          console.log("[ClosedTradesTable] Refetched and merged tags:", merged);
+          setAllTags(merged);
+        }
+      } catch (error) {
+        console.error("[ClosedTradesTable] Error refetching tags:", error);
+      }
+    },
+    [accountId, trades, computeTags],
+  );
 
   // Combiner trades et retraits en une seule liste pour le tableau
   const allRows = useMemo<TableRow[]>(() => {
@@ -349,6 +643,25 @@ export function ClosedTradesTable({
         },
       },
       {
+        id: "tags",
+        header: "Tags",
+        cell: ({ row }) => {
+          const rowData = row.original;
+          if ("withdrawal" in rowData) {
+            return <span className="text-xs text-slate-400">-</span>;
+          }
+          return (
+            <TagCell
+              trade={rowData}
+              allTags={allTags}
+              onUpdate={(next) => updateTradeTags(rowData, next)}
+              onEnsureTag={ensureTagExists}
+              disabled={savingTicket === rowData.ticket}
+            />
+          );
+        },
+      },
+      {
         accessorKey: "profit",
         header: "Montant",
         cell: ({ row }) => {
@@ -436,7 +749,7 @@ export function ClosedTradesTable({
         ),
       },
     ],
-    [],
+    [allTags, savingTicket, updateTradeTags, ensureTagExists, mode, baseCapital],
   );
 
   const table = useReactTable({

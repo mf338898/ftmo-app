@@ -54,6 +54,7 @@ export type TradeDoc = {
   mae?: number;
   notes?: string;
   screenshotUrl?: string;
+  tags?: string[];
   createdAt?: Date;
   updatedAt?: Date;
 };

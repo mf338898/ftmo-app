@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/firebaseAdmin";
-import type { TradeDoc, WithdrawalDoc } from "@/lib/firestoreSchemas";
+import type { TradeDoc } from "@/lib/firestoreSchemas";
 import type { StatisticsKpi, DailySummary } from "@/components/ftmo/types";
 
 export const runtime = "nodejs";
@@ -99,6 +99,12 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const accountId = searchParams.get("accountId");
   const userId = searchParams.get("userId") ?? "demo-user";
+  const tagsParam = searchParams.getAll("tag");
+  const tagsCsv = searchParams.get("tags");
+  const tagFilters = [
+    ...tagsParam,
+    ...(tagsCsv ? tagsCsv.split(",").map((t) => t.trim()).filter(Boolean) : []),
+  ];
 
   if (!accountId) {
     return NextResponse.json({ error: "accountId required" }, { status: 400 });
@@ -118,34 +124,42 @@ export async function GET(req: Request) {
       (doc) => ({ ticket: doc.id, ...doc.data() } as TradeDoc),
     );
 
-    const withdrawalsSnap = await db
-      .collection("withdrawals")
+    const tagsSnap = await db
+      .collection("tags")
       .where("accountId", "==", accountId)
       .where("userId", "==", userId)
       .get();
-    const withdrawals = withdrawalsSnap.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() }) as WithdrawalDoc,
-    );
-    const totalWithdrawals = withdrawals.reduce(
-      (acc, w) => acc + Math.abs(w.amount),
-      0,
-    );
+    const storedTags = tagsSnap.docs
+      .map((doc) => doc.data()?.name as string | undefined)
+      .filter((t): t is string => typeof t === "string" && t.length > 0);
 
-    if (trades.length === 0) {
+    const availableTags = Array.from(
+      new Set([
+        ...storedTags,
+        ...trades
+          .map((t) => t.tags ?? [])
+          .flat()
+          .filter((t): t is string => typeof t === "string" && t.length > 0),
+      ]),
+    ).sort((a, b) => a.localeCompare(b, "fr"));
+
+    const filteredTrades =
+      tagFilters.length === 0
+        ? trades
+        : trades.filter((t) => tagFilters.every((tag) => t.tags?.includes(tag)));
+
+    if (filteredTrades.length === 0) {
       return NextResponse.json({
         statistics: null,
         dailySummary: [],
-        withdrawals,
+        availableTags,
       });
     }
 
-    const statistics = calculateStatistics(trades, initialBalance);
-    statistics.equity = statistics.equity - totalWithdrawals;
-    statistics.balance = statistics.balance - totalWithdrawals;
+    const statistics = calculateStatistics(filteredTrades, initialBalance);
+    const dailySummary = calculateDailySummary(filteredTrades);
 
-    const dailySummary = calculateDailySummary(trades);
-
-    return NextResponse.json({ statistics, dailySummary, withdrawals });
+    return NextResponse.json({ statistics, dailySummary, availableTags });
   } catch (error) {
     if (error instanceof Error && error.message.includes("Firebase admin credentials")) {
       return NextResponse.json(

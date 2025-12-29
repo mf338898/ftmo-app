@@ -101,7 +101,7 @@ function DailySummaryTable({ data }: { data: DailySummary[] }) {
                   </td>
                   <td className="px-4 py-3 text-slate-700">{row.trades}</td>
                   <td className="px-4 py-3 text-slate-700">
-                    {row.lots.toFixed(2)}
+                    {(row.lots ?? 0).toFixed(2)}
                   </td>
                   <td
                     className={clsx(
@@ -144,12 +144,15 @@ export function StatisticsPage({
   const [statistics, setStatistics] = useState<StatisticsKpi | null>(null);
   const [dailySummary, setDailySummary] = useState<DailySummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const tagQuery = selectedTag ? `&tag=${encodeURIComponent(selectedTag)}` : "";
         const res = await fetch(
-          `/api/ftmo/statistics?accountId=${accountId}&userId=demo-user`,
+          `/api/ftmo/statistics?accountId=${accountId}&userId=demo-user${tagQuery}`,
         );
         if (!res.ok) {
           setStatistics(null);
@@ -168,82 +171,127 @@ export function StatisticsPage({
       }
     };
     fetchData();
+  }, [accountId, refreshKey, selectedTag]);
+
+  useEffect(() => {
+    const fetchTags = async () => {
+      try {
+        const res = await fetch(
+          `/api/ftmo/tags?accountId=${accountId}&userId=demo-user`,
+        );
+        if (!res.ok) {
+          setAvailableTags([]);
+          return;
+        }
+        const data = await res.json();
+        setAvailableTags(data.tags ?? []);
+      } catch {
+        setAvailableTags([]);
+      }
+    };
+    fetchTags();
   }, [accountId, refreshKey]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-12">
-        <p className="text-slate-500">Chargement...</p>
-      </div>
-    );
-  }
-
-  if (!statistics) {
-    return (
-      <div className="flex items-center justify-center p-12">
-        <p className="text-slate-500">Aucune donnée disponible</p>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold text-slate-900">Statistiques</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Retraits exclus par défaut. Filtrez les résultats par tag si besoin.
+        </p>
+        {availableTags.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setSelectedTag(null)}
+              className={clsx(
+                "rounded-full border px-3 py-1 text-sm",
+                selectedTag === null
+                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+              )}
+            >
+              Tous les tags
+            </button>
+            {availableTags.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => setSelectedTag(tag)}
+                className={clsx(
+                  "rounded-full border px-3 py-1 text-sm",
+                  selectedTag === tag
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                )}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.5fr,1fr]">
-        <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <KpiCard
-              label="Equity"
-              value={formatValue(statistics.equity, mode, baseCapital, currencyCode)}
-            />
-            <KpiCard
-              label="Solde"
-              value={formatValue(statistics.balance, mode, baseCapital, currencyCode)}
-            />
-            <KpiCard
-              label="Taux de réussite"
-              value={percent(statistics.successRate)}
-              valueColor="green"
-            />
-            <KpiCard
-              label="Profit moyen"
-              value={formatValue(statistics.averageProfit, mode, baseCapital, currencyCode, true)}
-              valueColor="green"
-            />
-            <KpiCard
-              label="Perte moyenne"
-              value={formatValue(statistics.averageLoss, mode, baseCapital, currencyCode, true)}
-              valueColor="red"
-            />
-            <KpiCard label="Nombre de trades" value={statistics.totalTrades.toString()} />
-            <KpiCard label="Lots" value={statistics.totalLots.toFixed(2)} />
-            <KpiCard
-              label="Ratio de Sharpe"
-              value={statistics.sharpeRatio.toFixed(2)}
-            />
-            <KpiCard label="RRR moyen" value={statistics.avgRrr.toFixed(2)} />
-            <KpiCard
-              label="Valeur attendue"
-              value={formatValue(statistics.expectedValue, mode, baseCapital, currencyCode)}
-            />
-            <KpiCard
-              label="Facteur de profit"
-              value={
-                statistics.profitFactor === Infinity
-                  ? "∞"
-                  : statistics.profitFactor.toFixed(2)
-              }
-            />
+      {loading ? (
+        <div className="flex items-center justify-center p-12">
+          <p className="text-slate-500">Chargement...</p>
+        </div>
+      ) : !statistics ? (
+        <div className="flex items-center justify-center p-12">
+          <p className="text-slate-500">Aucune donnée disponible</p>
+        </div>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[1.5fr,1fr]">
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <KpiCard
+                label="Equity"
+                value={formatValue(statistics.equity, mode, baseCapital, currencyCode)}
+              />
+              <KpiCard
+                label="Solde"
+                value={formatValue(statistics.balance, mode, baseCapital, currencyCode)}
+              />
+              <KpiCard
+                label="Taux de réussite"
+                value={percent(statistics.successRate)}
+                valueColor="green"
+              />
+              <KpiCard
+                label="Profit moyen"
+                value={formatValue(statistics.averageProfit, mode, baseCapital, currencyCode, true)}
+                valueColor="green"
+              />
+              <KpiCard
+                label="Perte moyenne"
+                value={formatValue(statistics.averageLoss, mode, baseCapital, currencyCode, true)}
+                valueColor="red"
+              />
+              <KpiCard label="Nombre de trades" value={statistics.totalTrades.toString()} />
+              <KpiCard label="Lots" value={(statistics.totalLots ?? 0).toFixed(2)} />
+              <KpiCard
+                label="Ratio de Sharpe"
+                value={(statistics.sharpeRatio ?? 0).toFixed(2)}
+              />
+              <KpiCard label="RRR moyen" value={(statistics.avgRrr ?? 0).toFixed(2)} />
+              <KpiCard
+                label="Valeur attendue"
+                value={formatValue(statistics.expectedValue, mode, baseCapital, currencyCode)}
+              />
+              <KpiCard
+                label="Facteur de profit"
+                value={
+                  statistics.profitFactor === Infinity
+                    ? "∞"
+                    : (statistics.profitFactor ?? 0).toFixed(2)
+                }
+              />
+            </div>
+          </div>
+
+          <div>
+            <DailySummaryTable data={dailySummary} />
           </div>
         </div>
-
-        <div>
-          <DailySummaryTable data={dailySummary} />
-        </div>
-      </div>
+      )}
     </div>
   );
 }
