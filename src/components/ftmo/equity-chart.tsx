@@ -30,6 +30,12 @@ type ChartPoint = EquityPoint & {
   performanceNegative: number;
   performancePositiveLine: number | null;
   performanceNegativeLine: number | null;
+  // Pour le mode absolute : gain/perte en euros (equity - equityStart)
+  equityDelta: number;
+  equityPositive: number;
+  equityNegative: number;
+  equityPositiveLine: number | null;
+  equityNegativeLine: number | null;
 };
 
 const formatDate = (value: string) => {
@@ -125,6 +131,11 @@ export function EquityChart({
   const toChartPoint = (point: EquityPoint): ChartPoint => {
     const perf = ((point.equity / equityStart) - 1) * 100;
     const performancePct = Number.isFinite(perf) ? perf : 0;
+    const isAboveStart = point.equity >= equityStart;
+    
+    // Pour le mode absolute : gain/perte en euros (equity - equityStart)
+    const equityDelta = point.equity - equityStart;
+    const isPositive = equityDelta >= 0;
 
     return {
       ...point,
@@ -133,6 +144,12 @@ export function EquityChart({
       performanceNegative: performancePct < 0 ? performancePct : 0,
       performancePositiveLine: performancePct >= 0 ? performancePct : null,
       performanceNegativeLine: performancePct < 0 ? performancePct : null,
+      // Pour le mode absolute : gain/perte en euros
+      equityDelta,
+      equityPositive: isPositive ? equityDelta : 0,
+      equityNegative: !isPositive ? equityDelta : 0,
+      equityPositiveLine: isPositive ? equityDelta : null,
+      equityNegativeLine: !isPositive ? equityDelta : null,
     };
   };
 
@@ -173,6 +190,11 @@ export function EquityChart({
         performanceNegative: 0,
         performancePositiveLine: 0,
         performanceNegativeLine: 0,
+        equityDelta: 0,
+        equityPositive: 0,
+        equityNegative: 0,
+        equityPositiveLine: 0,
+        equityNegativeLine: 0,
       };
 
       withCrossings.push(zeroPoint, curr);
@@ -181,7 +203,65 @@ export function EquityChart({
     return withCrossings;
   };
 
-  let data: ChartPoint[] = addZeroCrossings(validSeries.map(toChartPoint));
+  const addStartCrossings = (points: ChartPoint[]): ChartPoint[] => {
+    if (points.length < 2) return points;
+
+    const withCrossings: ChartPoint[] = [points[0]];
+
+    for (let i = 1; i < points.length; i++) {
+      const prev = withCrossings[withCrossings.length - 1];
+      const curr = points[i];
+      const prevDelta = prev.equityDelta;
+      const currDelta = curr.equityDelta;
+
+      const prevTime = new Date(prev.time).getTime();
+      const currTime = new Date(curr.time).getTime();
+
+      const prevIsPositive = prevDelta >= 0;
+      const currIsPositive = currDelta >= 0;
+
+      // Si pas de croisement, ajouter simplement le point
+      if (prevIsPositive === currIsPositive || Number.isNaN(prevTime) || Number.isNaN(currTime)) {
+        withCrossings.push(curr);
+        continue;
+      }
+
+      // Calculer le point de croisement au niveau de 0 (gain/perte = 0)
+      const ratio = (0 - prevDelta) / (currDelta - prevDelta);
+      const crossingTimestamp = prevTime + (currTime - prevTime) * ratio;
+      const crossingTime = Number.isFinite(crossingTimestamp)
+        ? new Date(crossingTimestamp).toISOString()
+        : prev.time;
+
+      const crossingDrawdown = prev.drawdownPct + (curr.drawdownPct - prev.drawdownPct) * ratio;
+      const crossingEquity = prev.equity + (curr.equity - prev.equity) * ratio;
+      const perf = ((crossingEquity / equityStart) - 1) * 100;
+
+      const crossingPoint: ChartPoint = {
+        time: crossingTime,
+        equity: crossingEquity,
+        drawdownPct: crossingDrawdown,
+        performancePct: perf,
+        performancePositive: 0,
+        performanceNegative: 0,
+        performancePositiveLine: 0,
+        performanceNegativeLine: 0,
+        equityDelta: 0,
+        equityPositive: 0,
+        equityNegative: 0,
+        equityPositiveLine: 0,
+        equityNegativeLine: 0,
+      };
+
+      withCrossings.push(crossingPoint, curr);
+    }
+
+    return withCrossings;
+  };
+
+  let data: ChartPoint[] = mode === "percentage" 
+    ? addZeroCrossings(validSeries.map(toChartPoint))
+    : addStartCrossings(validSeries.map(toChartPoint));
 
   if (data.length === 0) {
     const fallbackPoint = toChartPoint({
@@ -220,48 +300,57 @@ export function EquityChart({
     }
   }
 
-  const chartValueKey = mode === "percentage" ? "performancePct" : "equity";
+  const chartValueKey = mode === "percentage" ? "performancePct" : "equityDelta";
   const chartValues =
     mode === "percentage"
       ? data.map((d) => d.performancePct)
-      : data.map((d) => d.equity);
+      : data.map((d) => d.equityDelta);
 
-  const { domain: yDomain, ticks } =
-    mode === "percentage"
-      ? getPercentageDomain(chartValues)
-      : getAbsoluteDomain(chartValues);
+  // Utiliser la même logique de domaine pour les deux modes
+  const { domain: yDomain, ticks } = getPercentageDomain(chartValues);
 
-  // Position de 0% dans le gradient (0 = haut, 1 = bas)
+  // Position de la ligne de référence (0 dans les deux modes) dans le gradient (0 = haut, 1 = bas)
+  const referenceValue = 0;
   const zeroOffset =
     yDomain[1] === yDomain[0]
       ? 0.5
       : Math.min(
           1,
-          Math.max(0, (yDomain[1] - 0) / (yDomain[1] - yDomain[0])),
+          Math.max(0, (yDomain[1] - referenceValue) / (yDomain[1] - yDomain[0])),
         );
-  const blendPct = 0.8; // bande fine autour de 0 pour le fondu
+  const blendPct = 0.8; // bande fine autour de la ligne de référence pour le fondu
   const lowerStop = Math.max(0, zeroOffset * 100 - blendPct);
   const upperStop = Math.min(100, zeroOffset * 100 + blendPct);
 
   const currentPerformancePct =
     ((currentEquity || equityStart) / equityStart - 1) * 100;
+  const currentEquityDelta = (currentEquity || equityStart) - equityStart;
   const currentValue =
-    mode === "percentage" ? currentPerformancePct : currentEquity;
+    mode === "percentage" ? currentPerformancePct : currentEquityDelta;
 
   // Formatter pour l'axe Y
   const yAxisFormatter = (v: number) => {
     if (mode === "percentage") {
       return `${v.toFixed(1)}%`;
     }
-    return formatValue(v, "absolute", baseCapital, account.currency ?? "EUR");
+    // En mode absolute, afficher le gain/perte en euros avec signe
+    const sign = v >= 0 ? "+" : "";
+    const formatted = new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: account.currency ?? "EUR",
+      maximumFractionDigits: 0,
+    }).format(v);
+    return `${sign}${formatted}`;
   };
 
   const renderTooltip = (props: any) => {
     const { active, payload, label } = props;
     if (!active || !payload?.length) return null;
     const point = payload[0]?.payload as ChartPoint | undefined;
-    const value =
-      mode === "percentage" ? point?.performancePct : point?.equity ?? 0;
+    if (!point) return null;
+    
+    const value = mode === "percentage" ? point.performancePct : point.equityDelta;
+    const equityTotal = point.equity;
 
     return (
       <div
@@ -276,16 +365,30 @@ export function EquityChart({
           {formatDate(String(label))}
         </div>
         <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>
-          {mode === "percentage"
-            ? formatPercentageValue(value)
-            : formatValue(value, "absolute", baseCapital, account.currency ?? "EUR")}
+          {mode === "percentage" ? (
+            formatPercentageValue(value)
+          ) : (
+            <>
+              {value >= 0 ? "+" : ""}
+              {new Intl.NumberFormat("fr-FR", {
+                style: "currency",
+                currency: account.currency ?? "EUR",
+                maximumFractionDigits: 2,
+              }).format(value)}
+            </>
+          )}
         </div>
+        {mode === "absolute" && (
+          <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+            Équité: {formatValue(equityTotal, "absolute", baseCapital, account.currency ?? "EUR")}
+          </div>
+        )}
       </div>
     );
   };
 
   const getChartValueForPoint = (point: ChartPoint) =>
-    mode === "percentage" ? point.performancePct : point.equity;
+    mode === "percentage" ? point.performancePct : point.equityDelta;
 
   // Préparer les marqueurs de retraits - version simplifiée et robuste
   const withdrawalMarkers: Array<{ time: string; y: number; label: string; amount: number; dataIndex?: number }> = [];
@@ -357,16 +460,23 @@ export function EquityChart({
       <div className="h-[500px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-            {mode === "percentage" && (
-              <defs>
+            <defs>
+              {mode === "percentage" ? (
                 <linearGradient id="zeroBand" x1="0" x2="0" y1="0" y2="1">
                   <stop offset={`${Math.max(0, lowerStop - 0.2)}%`} stopColor={teal} />
                   <stop offset={`${lowerStop}%`} stopColor="#94a3b8" />
                   <stop offset={`${upperStop}%`} stopColor="#94a3b8" />
                   <stop offset={`${Math.min(100, upperStop + 0.2)}%`} stopColor={red} />
                 </linearGradient>
-              </defs>
-            )}
+              ) : (
+                <linearGradient id="startBand" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset={`${Math.max(0, lowerStop - 0.2)}%`} stopColor={teal} />
+                  <stop offset={`${lowerStop}%`} stopColor="#94a3b8" />
+                  <stop offset={`${upperStop}%`} stopColor="#94a3b8" />
+                  <stop offset={`${Math.min(100, upperStop + 0.2)}%`} stopColor={red} />
+                </linearGradient>
+              )}
+            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis
               dataKey="time"
@@ -388,35 +498,19 @@ export function EquityChart({
             />
             <Tooltip content={renderTooltip} />
 
-            {/* Ligne de base à 0% */}
-            {mode === "percentage" ? (
-              <ReferenceLine
-                y={0}
-                stroke="#0f172a"
-                strokeWidth={2.5}
-                strokeDasharray="4 4"
-                label={{
-                  value: "0%",
-                  position: "right",
-                  fill: "#0f172a",
-                  fontSize: 12,
-                  fontWeight: 700,
-                }}
-              />
-            ) : (
-              <ReferenceLine
-                y={equityStart}
-                stroke="#1e293b"
-                strokeDasharray="5 5"
-                label={{
-                  value: `${equityStart.toLocaleString("fr-FR")} (Capital de départ)`,
-                  position: "right",
-                  fill: "#1e293b",
-                  fontSize: 12,
-                  fontWeight: 500,
-                }}
-              />
-            )}
+            {/* Ligne de base à 0 (0% en mode percentage, 0 € en mode absolute) */}
+            <ReferenceLine
+              y={0}
+              stroke="#0f172a"
+              strokeWidth={2.5}
+              label={{
+                value: mode === "percentage" ? "0%" : "0 €",
+                position: "right",
+                fill: "#0f172a",
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            />
 
             <ReferenceLine
               y={currentValue}
@@ -466,19 +560,37 @@ export function EquityChart({
               <>
                 <Area
                   type="monotone"
-                  dataKey="equity"
+                  dataKey="equityPositive"
                   fill={tealLight}
-                  fillOpacity={0.3}
+                  fillOpacity={0.35}
                   stroke="none"
+                  isAnimationActive={false}
                 />
-
+                <Area
+                  type="monotone"
+                  dataKey="equityNegative"
+                  fill={redLight}
+                  fillOpacity={0.35}
+                  stroke="none"
+                  isAnimationActive={false}
+                />
                 <Line
                   type="monotone"
-                  dataKey="equity"
+                  dataKey="equityPositiveLine"
                   stroke={teal}
                   strokeWidth={2.5}
                   dot={false}
                   activeDot={{ r: 6, fill: teal }}
+                  connectNulls={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="equityNegativeLine"
+                  stroke={red}
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={false}
+                  connectNulls={false}
                 />
               </>
             )}

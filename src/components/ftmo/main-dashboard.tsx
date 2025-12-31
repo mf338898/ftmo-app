@@ -521,9 +521,9 @@ export function MainDashboard() {
 
   return (
     <div>
-      <div className="sticky top-0 z-10 bg-white shadow-sm">
-        <div className="px-4 pt-6 pb-4 sm:px-6 lg:px-12">
-          <div className="space-y-3">
+      <div className="sm:sticky sm:top-0 sm:z-10 bg-white sm:shadow-sm">
+        <div className="px-4 pt-4 pb-3 sm:pt-6 sm:pb-4 sm:px-6 lg:px-12">
+          <div className="space-y-2 sm:space-y-3">
             <DashboardHeader
               activeAccount={activeAccount}
               isBusy={isBusy}
@@ -537,7 +537,7 @@ export function MainDashboard() {
         </div>
       </div>
 
-      <div className="px-4 py-6 sm:px-6 lg:px-12">
+      <div className="px-4 py-4 sm:py-6 sm:px-6 lg:px-12">
         <DashboardTabs
           activeAccount={activeAccount}
           selectedAccount={selectedAccount}
