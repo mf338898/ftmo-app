@@ -36,3 +36,74 @@ a {
   background: #d4d7de;
   border-radius: 8px;
 }
+
+/* Scroll horizontal amélioré pour les tableaux */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+  /* Indicateur visuel pour le scroll horizontal */
+  background: linear-gradient(to right, white 30%, rgba(255,255,255,0)),
+              linear-gradient(to right, rgba(255,255,255,0), white 70%) 100% 0,
+              radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.2), rgba(0,0,0,0)),
+              radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.2), rgba(0,0,0,0)) 100% 0;
+  background-repeat: no-repeat;
+  background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+
+.overflow-x-auto::-webkit-scrollbar {
+  height: 8px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Amélioration du scroll sur mobile */
+@media (max-width: 640px) {
+  .overflow-x-auto {
+    scrollbar-width: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .overflow-x-auto::-webkit-scrollbar {
+    height: 6px;
+  }
+}
+
+/* Utilitaires pour éviter les textes coupés */
+.break-words {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.word-break-break-word {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+/* Amélioration responsive pour les petits écrans */
+@media (max-width: 640px) {
+  /* Réduction des espacements sur mobile */
+  .responsive-padding {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  
+  /* Textes plus petits sur mobile */
+  .responsive-text {
+    font-size: 0.875rem;
+  }
+}

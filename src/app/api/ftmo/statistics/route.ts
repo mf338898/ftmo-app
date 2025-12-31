@@ -101,6 +101,7 @@ export async function GET(req: Request) {
   const userId = searchParams.get("userId") ?? "demo-user";
   const tagsParam = searchParams.getAll("tag");
   const tagsCsv = searchParams.get("tags");
+  const periodParam = searchParams.get("period") as "7d" | "30d" | "90d" | "all" | null;
   const tagFilters = [
     ...tagsParam,
     ...(tagsCsv ? tagsCsv.split(",").map((t) => t.trim()).filter(Boolean) : []),
@@ -143,10 +144,33 @@ export async function GET(req: Request) {
       ]),
     ).sort((a, b) => a.localeCompare(b, "fr"));
 
-    const filteredTrades =
+    let filteredTrades =
       tagFilters.length === 0
         ? trades
         : trades.filter((t) => tagFilters.every((tag) => t.tags?.includes(tag)));
+
+    // Filtrer par période si spécifié
+    if (periodParam && periodParam !== "all") {
+      const now = new Date();
+      const cutoffDate = new Date();
+      
+      if (periodParam === "7d") {
+        cutoffDate.setDate(now.getDate() - 7);
+      } else if (periodParam === "30d") {
+        cutoffDate.setDate(now.getDate() - 30);
+      } else if (periodParam === "90d") {
+        cutoffDate.setDate(now.getDate() - 90);
+      }
+      
+      cutoffDate.setHours(0, 0, 0, 0);
+      
+      filteredTrades = filteredTrades.filter((t) => {
+        if (!t.closeTime) return false;
+        const closeDate = new Date(t.closeTime);
+        closeDate.setHours(0, 0, 0, 0);
+        return closeDate >= cutoffDate;
+      });
+    }
 
     if (filteredTrades.length === 0) {
       return NextResponse.json({

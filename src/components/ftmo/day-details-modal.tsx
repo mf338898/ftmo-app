@@ -217,7 +217,7 @@ export function DayDetailsModal({
         <Dialog.Panel className="mx-auto max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white shadow-xl">
           {/* En-tête */}
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-            <Dialog.Title className="text-xl font-bold text-slate-900">
+            <Dialog.Title className="text-xl font-bold text-slate-900 break-words">
               {capitalizedDate}
             </Dialog.Title>
             <button
@@ -410,25 +410,25 @@ export function DayDetailsModal({
                         <thead className="bg-slate-50">
                           <tr>
                             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                              Type
+                              <div className="break-words">Type</div>
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                              Heure de clôture
+                              <div className="break-words">Heure de clôture</div>
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                              Symbole
+                              <div className="break-words">Symbole</div>
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                              Volume
+                              <div className="break-words">Volume</div>
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                              Durée
+                              <div className="break-words">Durée</div>
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                              PnL
+                              <div className="break-words">PnL</div>
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                              Action
+                              <div className="break-words">Action</div>
                             </th>
                           </tr>
                         </thead>
@@ -439,6 +439,7 @@ export function DayDetailsModal({
                             return (
                               <tr key={trade.ticket} className="hover:bg-slate-50">
                                 <td className="px-4 py-3">
+                                  <div className="break-words">
                                   {trade.type === "buy" ? (
                                     <div className="flex items-center gap-2">
                                       <svg
@@ -478,34 +479,37 @@ export function DayDetailsModal({
                                       </span>
                                     </div>
                                   )}
+                                  </div>
                                 </td>
                                 <td className="px-4 py-3 text-slate-700">
-                                  {formatCloseTime(trade.closeTime)}
+                                  <div className="break-words">{formatCloseTime(trade.closeTime)}</div>
                                 </td>
                                 <td className="px-4 py-3 text-slate-700">
-                                  {trade.symbol}
+                                  <div className="break-words">{trade.symbol}</div>
                                 </td>
                                 <td className="px-4 py-3 text-slate-700">
-                                  {trade.volume.toFixed(2)}
+                                  <div className="break-words">{trade.volume.toFixed(2)}</div>
                                 </td>
                                 <td className="px-4 py-3 text-slate-700">
-                                  {formatDuration(trade.durationSeconds)}
+                                  <div className="break-words">{formatDuration(trade.durationSeconds)}</div>
                                 </td>
                                 <td className="px-4 py-3">
-                                  <span
-                                    className={clsx(
-                                      "text-sm font-semibold",
-                                      isPositive ? "text-green-600" : "text-red-600",
-                                    )}
-                                  >
-                                    {formatValue(
-                                      netProfit,
-                                      mode,
-                                      baseCapital,
-                                      "EUR",
-                                      true,
-                                    )}
-                                  </span>
+                                  <div className="break-words">
+                                    <span
+                                      className={clsx(
+                                        "text-sm font-semibold",
+                                        isPositive ? "text-green-600" : "text-red-600",
+                                      )}
+                                    >
+                                      {formatValue(
+                                        netProfit,
+                                        mode,
+                                        baseCapital,
+                                        "EUR",
+                                        true,
+                                      )}
+                                    </span>
+                                  </div>
                                 </td>
                                 <td className="px-4 py-3">
                                   <button className="text-slate-400 hover:text-slate-600">

@@ -45,7 +45,7 @@ function PnlPipsCell({ value, isPips = false }: { value: number; isPips?: boolea
   return (
     <div
       className={clsx(
-        "inline-block rounded-lg px-2.5 py-1 text-sm font-semibold",
+        "inline-block rounded-lg px-1.5 py-0.5 sm:px-2.5 sm:py-1 text-xs sm:text-sm font-semibold whitespace-nowrap",
         isPositive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700",
       )}
     >
@@ -57,6 +57,186 @@ function PnlPipsCell({ value, isPips = false }: { value: number; isPips?: boolea
 
 // Type mixte pour trades et retraits
 type TableRow = TradeRow | { type: "withdrawal"; withdrawal: Withdrawal };
+
+function TradeCard({
+  row,
+  isExpanded,
+  onToggleExpand,
+  allTags,
+  onUpdateTags,
+  onEnsureTag,
+  savingTicket,
+  mode,
+  baseCapital,
+}: {
+  row: TableRow;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  allTags: string[];
+  onUpdateTags: (trade: TradeRow, tags: string[]) => void;
+  onEnsureTag: (tag: string) => Promise<void>;
+  savingTicket: string | null;
+  mode: "absolute" | "percentage";
+  baseCapital: number;
+}) {
+  if ("withdrawal" in row) {
+    const w = row.withdrawal;
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-bold uppercase text-blue-800 bg-blue-100 px-2 py-1 rounded">Retrait</span>
+              <span className="text-sm text-slate-600">{w.type ?? "Récompense 80%"}</span>
+            </div>
+            <div className="text-xs sm:text-sm text-slate-600 mb-2">
+              {format(new Date(w.date), "d MMM yyyy, HH:mm", { locale: fr })}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="inline-block rounded-lg px-2.5 py-1 text-sm font-semibold bg-blue-100 text-blue-700">
+                {formatValue(-Math.abs(w.amount), mode, baseCapital, "EUR", true)}
+              </div>
+              <span className="text-xs text-blue-600">(100% retiré)</span>
+            </div>
+            {w.note && (
+              <div className="mt-2 text-xs text-slate-500">{w.note}</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const trade = row;
+  const isPositive = (trade.profit ?? 0) >= 0;
+  const hasNotes = !!(trade.notes || trade.screenshotUrl);
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm font-semibold text-slate-900">Ticket {trade.ticket}</span>
+            {hasNotes && (
+              <svg
+                className="h-4 w-4 text-slate-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                />
+              </svg>
+            )}
+          </div>
+          <div className="flex items-center gap-3 mb-3">
+            <div
+              className={clsx(
+                "flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold",
+                trade.type === "buy"
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-700",
+              )}
+            >
+              {trade.type === "buy" ? (
+                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              ) : (
+                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M14.707 12.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 14.586V7a1 1 0 012 0v7.586l2.293-2.293a1 1 0 011.414 0z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              )}
+              {trade.type === "buy" ? "Buy" : "Sell"}
+            </div>
+            <span className="text-xs sm:text-sm text-slate-600">
+              {formatCloseTime(trade.closeTime)}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="text-slate-400 hover:text-slate-600" title="Lien externe">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-2 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 w-16">Volume</span>
+          <span className="text-sm font-medium text-slate-900">{trade.volume}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 w-16">Symbole</span>
+          <span className="text-sm font-medium text-slate-900">{trade.symbol}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 w-16">PnL</span>
+          <PnlPipsCell value={trade.profit ?? 0} />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 w-16">Pips</span>
+          <PnlPipsCell value={trade.pips ?? 0} isPips />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 w-16">Durée</span>
+          <div className="inline-block rounded-lg px-2.5 py-1 text-sm font-medium bg-slate-100 text-slate-700">
+            {formatDuration(trade.durationSeconds)}
+          </div>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="mt-3 pt-3 border-t border-slate-200">
+          <div>
+            <div className="text-xs text-slate-500 mb-2">Tags</div>
+            <TagCell
+              trade={trade}
+              allTags={allTags}
+              onUpdate={(tags) => onUpdateTags(trade, tags)}
+              onEnsureTag={onEnsureTag}
+              disabled={savingTicket === trade.ticket}
+            />
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={onToggleExpand}
+        className="mt-3 w-full flex items-center justify-center gap-1 text-xs text-slate-600 hover:text-slate-900 py-2 border-t border-slate-100"
+      >
+        {isExpanded ? "Afficher moins" : "Afficher plus"}
+        <svg
+          className={clsx("h-4 w-4 transition-transform", isExpanded && "rotate-180")}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+    </div>
+  );
+}
 
 function TagCell({
   trade,
@@ -206,8 +386,12 @@ export function ClosedTradesTable({
   ]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [tagFilter, setTagFilter] = useState<string>("all");
+  const [symbolFilter, setSymbolFilter] = useState<string>("all");
   const [allTags, setAllTags] = useState<string[]>([]);
   const [savingTicket, setSavingTicket] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"table" | "cards">("cards");
+  const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set());
 
   const computeTags = useCallback((list: TradeRow[]) => {
     return Array.from(
@@ -404,6 +588,18 @@ export function ClosedTradesTable({
     [accountId, trades, computeTags],
   );
 
+  // Extraire les symboles uniques (incluant "Retrait" pour les retraits)
+  const uniqueSymbols = useMemo(() => {
+    const symbols = Array.from(
+      new Set(trades.map((t) => t.symbol).filter((s): s is string => !!s)),
+    ).sort((a, b) => a.localeCompare(b, "fr"));
+    // Ajouter "Retrait" s'il y a des retraits
+    if (withdrawals.length > 0) {
+      return ["Retrait", ...symbols];
+    }
+    return symbols;
+  }, [trades, withdrawals]);
+
   // Combiner trades et retraits en une seule liste pour le tableau
   const allRows = useMemo<TableRow[]>(() => {
     const rows: TableRow[] = [
@@ -427,12 +623,35 @@ export function ClosedTradesTable({
 
   const filteredRows = useMemo(() => {
     let filtered = allRows;
+    
+    // Filtre par type (Buy/Sell)
     if (typeFilter !== "all") {
       filtered = filtered.filter((row) => {
         if ("withdrawal" in row) return false; // Les retraits ne sont pas filtrés par type de trade
         return row.type === typeFilter;
       });
     }
+    
+    // Filtre par tag
+    if (tagFilter !== "all") {
+      filtered = filtered.filter((row) => {
+        if ("withdrawal" in row) return false; // Les retraits n'ont pas de tags
+        const tradeTags = row.tags ?? [];
+        return tradeTags.includes(tagFilter);
+      });
+    }
+    
+    // Filtre par symbole (incluant "Retrait")
+    if (symbolFilter !== "all") {
+      filtered = filtered.filter((row) => {
+        if ("withdrawal" in row) {
+          return symbolFilter === "Retrait";
+        }
+        return row.symbol === symbolFilter;
+      });
+    }
+    
+    // Recherche globale (améliorée pour inclure les tags)
     if (globalFilter) {
       const search = globalFilter.toLowerCase();
       filtered = filtered.filter((row) => {
@@ -443,24 +662,27 @@ export function ClosedTradesTable({
             (w.note ?? "").toLowerCase().includes(search)
           );
         }
+        const tradeTags = (row.tags ?? []).map((t) => t.toLowerCase()).join(" ");
         return (
           row.ticket.toLowerCase().includes(search) ||
-          row.symbol.toLowerCase().includes(search)
+          row.symbol.toLowerCase().includes(search) ||
+          tradeTags.includes(search)
         );
       });
     }
+    
     return filtered;
-  }, [allRows, typeFilter, globalFilter]);
+  }, [allRows, typeFilter, tagFilter, symbolFilter, globalFilter]);
 
   const columns: ColumnDef<TableRow>[] = useMemo(
     () => [
       {
         accessorKey: "ticket",
         header: () => (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 whitespace-nowrap">
             Type
             <button className="text-slate-400 hover:text-slate-600">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -474,61 +696,38 @@ export function ClosedTradesTable({
         cell: ({ row }) => {
           const rowData = row.original;
           if ("withdrawal" in rowData) {
-            const w = rowData.withdrawal;
             return (
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase text-blue-800">Retrait</span>
-                <span className="text-sm font-medium text-slate-900">{w.type ?? "Récompense 80%"}</span>
-              </div>
+              <span className="text-[10px] sm:text-xs font-bold uppercase text-blue-800 whitespace-nowrap">Retrait</span>
             );
           }
           const trade = rowData;
-          const hasNotes = !!(trade.notes || trade.screenshotUrl);
           return (
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-slate-900">{trade.ticket}</span>
-              {hasNotes && (
-                <svg
-                  className="h-4 w-4 text-slate-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
+            <div
+              className={clsx(
+                "flex items-center gap-0.5 sm:gap-1 rounded px-1 sm:px-1.5 py-0.5 text-[10px] sm:text-xs font-semibold",
+                trade.type === "buy"
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-700",
+              )}
+            >
+              {trade.type === "buy" ? (
+                <svg className="h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                    fillRule="evenodd"
+                    d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              ) : (
+                <svg className="h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M14.707 12.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 14.586V7a1 1 0 012 0v7.586l2.293-2.293a1 1 0 011.414 0z"
+                    clipRule="evenodd"
                   />
                 </svg>
               )}
-              <div
-                className={clsx(
-                  "flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold",
-                  trade.type === "buy"
-                    ? "bg-green-100 text-green-700"
-                    : "bg-red-100 text-red-700",
-                )}
-              >
-                {trade.type === "buy" ? (
-                  <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M5.293 7.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L6.707 7.707a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                ) : (
-                  <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M14.707 12.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 14.586V7a1 1 0 012 0v7.586l2.293-2.293a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                )}
-                {trade.type === "buy" ? "Buy" : "Sell"}
-              </div>
+              <span className="whitespace-nowrap">{trade.type === "buy" ? "Buy" : "Sell"}</span>
             </div>
           );
         },
@@ -545,7 +744,7 @@ export function ClosedTradesTable({
           <div className="flex items-center gap-1">
             Date / Heure
             <button className="text-slate-400 hover:text-slate-600">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -560,13 +759,13 @@ export function ClosedTradesTable({
           const rowData = row.original;
           if ("withdrawal" in rowData) {
             return (
-              <span className="text-sm text-slate-700">
+              <span className="text-xs sm:text-sm text-slate-700 whitespace-nowrap">
                 {format(new Date(rowData.withdrawal.date), "d MMM yyyy, HH:mm", { locale: fr })}
               </span>
             );
           }
           return (
-            <span className="text-sm text-slate-700">
+            <span className="text-xs sm:text-sm text-slate-700 whitespace-nowrap">
               {formatCloseTime(rowData.closeTime)}
             </span>
           );
@@ -578,7 +777,7 @@ export function ClosedTradesTable({
           <div className="flex items-center gap-1">
             Volume / Détails
             <button className="text-slate-400 hover:text-slate-600">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -594,10 +793,10 @@ export function ClosedTradesTable({
           if ("withdrawal" in rowData) {
             const w = rowData.withdrawal;
             return (
-              <div className="text-sm text-slate-700">
-                {w.note && <div className="text-xs text-slate-500">{w.note}</div>}
+              <div className="text-xs sm:text-sm text-slate-700">
+                {w.note && <div className="text-[10px] sm:text-xs text-slate-500 break-words">{w.note}</div>}
                 {w.type?.includes("80%") && (
-                  <div className="text-xs text-green-600 mt-1 font-semibold">
+                  <div className="text-[10px] sm:text-xs text-green-600 mt-1 font-semibold">
                     {formatValue(
                       Math.abs(w.amount * 0.8),
                       mode,
@@ -611,7 +810,7 @@ export function ClosedTradesTable({
             );
           }
           return (
-            <span className="text-sm text-slate-700">{rowData.volume}</span>
+            <span className="text-xs sm:text-sm text-slate-700">{rowData.volume}</span>
           );
         },
       },
@@ -621,7 +820,7 @@ export function ClosedTradesTable({
           <div className="flex items-center gap-1">
             Symbole
             <button className="text-slate-400 hover:text-slate-600">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -635,10 +834,10 @@ export function ClosedTradesTable({
         cell: ({ row }) => {
           const rowData = row.original;
           if ("withdrawal" in rowData) {
-            return <span className="text-sm text-slate-400">-</span>;
+            return <span className="text-xs sm:text-sm text-slate-400">-</span>;
           }
           return (
-            <span className="text-sm font-medium text-slate-900">{rowData.symbol}</span>
+            <span className="text-xs sm:text-sm font-medium text-slate-900 whitespace-nowrap">{rowData.symbol}</span>
           );
         },
       },
@@ -671,7 +870,7 @@ export function ClosedTradesTable({
             return (
               <div className="text-right">
                 <div className={clsx(
-                  "inline-block rounded-lg px-2.5 py-1 text-sm font-semibold bg-blue-100 text-blue-700",
+                  "inline-block rounded-lg px-1.5 py-0.5 sm:px-2.5 sm:py-1 text-xs sm:text-sm font-semibold bg-blue-100 text-blue-700",
                 )}>
                   {formatValue(
                     -Math.abs(w.amount),
@@ -681,7 +880,7 @@ export function ClosedTradesTable({
                     true,
                   )}
                 </div>
-                <div className="text-xs text-blue-600 mt-1">
+                <div className="text-[10px] sm:text-xs text-blue-600 mt-0.5 sm:mt-1">
                   (100% retiré)
                 </div>
               </div>
@@ -698,7 +897,7 @@ export function ClosedTradesTable({
         cell: ({ row }) => {
           const rowData = row.original;
           if ("withdrawal" in rowData) {
-            return <span className="text-sm text-slate-400">-</span>;
+            return <span className="text-xs sm:text-sm text-slate-400">-</span>;
           }
           return (
             <PnlPipsCell value={rowData.pips ?? 0} isPips />
@@ -711,10 +910,10 @@ export function ClosedTradesTable({
         cell: ({ row }) => {
           const rowData = row.original;
           if ("withdrawal" in rowData) {
-            return <span className="text-sm text-slate-400">-</span>;
+            return <span className="text-xs sm:text-sm text-slate-400">-</span>;
           }
           return (
-            <span className="text-sm text-slate-700">
+            <span className="text-xs sm:text-sm text-slate-700 whitespace-nowrap">
               {formatDuration(rowData.durationSeconds)}
             </span>
           );
@@ -726,7 +925,7 @@ export function ClosedTradesTable({
         cell: () => (
           <div className="flex items-center gap-2">
             <button className="text-slate-400 hover:text-slate-600">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -736,7 +935,7 @@ export function ClosedTradesTable({
               </svg>
             </button>
             <button className="text-slate-400 hover:text-slate-600">
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-3 w-3 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -762,6 +961,18 @@ export function ClosedTradesTable({
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
   });
+
+  const toggleExpand = useCallback((ticket: string) => {
+    setExpandedTrades((prev) => {
+      const next = new Set(prev);
+      if (next.has(ticket)) {
+        next.delete(ticket);
+      } else {
+        next.add(ticket);
+      }
+      return next;
+    });
+  }, []);
 
   const handleExport = () => {
     const csv = [
@@ -811,15 +1022,45 @@ export function ClosedTradesTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4">
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-slate-700">Trier par</label>
+          <button
+            onClick={() => setViewMode("table")}
+            className={clsx(
+              "flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-medium transition-colors",
+              viewMode === "table"
+                ? "bg-blue-600 text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            )}
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            Tableau
+          </button>
+          <button
+            onClick={() => setViewMode("cards")}
+            className={clsx(
+              "flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-medium transition-colors",
+              viewMode === "cards"
+                ? "bg-blue-600 text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            )}
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            Cartes
+          </button>
+        </div>
+        <div className="flex items-center gap-1 sm:gap-2">
+          <label className="text-xs sm:text-sm font-medium text-slate-700 whitespace-nowrap">Trier par</label>
           <select
             value={sorting[0]?.id ?? "closeTime"}
             onChange={(e) =>
               setSorting([{ id: e.target.value, desc: sorting[0]?.desc ?? true }])
             }
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm min-w-[120px] sm:min-w-[140px]"
           >
             <option value="closeTime">Heure de clôture ↓</option>
             <option value="profit">PnL</option>
@@ -828,21 +1069,53 @@ export function ClosedTradesTable({
           </select>
         </div>
 
-        <div className="flex-1">
+        <div className="flex items-center gap-1 sm:gap-2">
+          <label className="text-xs sm:text-sm font-medium text-slate-700 whitespace-nowrap">Tag</label>
+          <select
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm min-w-[100px] sm:min-w-[120px]"
+          >
+            <option value="all">Tous les tags</option>
+            {allTags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1 sm:gap-2">
+          <label className="text-xs sm:text-sm font-medium text-slate-700 whitespace-nowrap">Symbole</label>
+          <select
+            value={symbolFilter}
+            onChange={(e) => setSymbolFilter(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm min-w-[100px] sm:min-w-[120px]"
+          >
+            <option value="all">Tous les symboles</option>
+            {uniqueSymbols.map((symbol) => (
+              <option key={symbol} value={symbol}>
+                {symbol}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex-1 min-w-0">
           <input
             type="text"
-            placeholder="Rechercher un ticket / tags"
+            placeholder="Rechercher un ticket, notes, tags..."
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm placeholder:text-slate-400"
+            className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs placeholder:text-slate-400 sm:px-4 sm:py-2 sm:text-sm"
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs sm:px-3 sm:py-2 sm:text-sm min-w-[70px] sm:min-w-[80px]"
           >
             <option value="all">Tous</option>
             <option value="buy">Buy</option>
@@ -851,61 +1124,101 @@ export function ClosedTradesTable({
 
           <button
             onClick={handleExport}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            className="flex items-center gap-1 sm:gap-2 rounded-lg bg-blue-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 sm:px-4 sm:py-2 sm:text-sm whitespace-nowrap"
+            title="Exporter en CSV"
           >
-            Exporter
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <span className="hidden sm:inline">Exporter</span>
+            <span className="sm:hidden">Exp.</span>
+            <svg className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M19 9l-7 7-7-7"
+                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
               />
             </svg>
           </button>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="max-h-[600px] overflow-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
+      {viewMode === "table" ? (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="max-h-[400px] sm:max-h-[600px] overflow-auto">
+            <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+              <table className="w-full text-xs sm:text-sm">
+                <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <tr key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <th
+                          key={header.id}
+                          className="px-2 py-2 sm:px-4 sm:py-3 text-left text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-slate-600 align-top min-w-[80px] sm:min-w-[100px]"
+                        >
+                          <div className="break-words whitespace-normal word-break-break-word">
+                            {header.isPlaceholder
+                              ? null
+                              : flexRender(header.column.columnDef.header, header.getContext())}
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50">
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-4 py-3">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {table.getRowModel().rows.map((row) => (
+                    <tr key={row.id} className="hover:bg-slate-50">
+                      {row.getVisibleCells().map((cell) => (
+                        <td 
+                          key={cell.id} 
+                          className="px-2 py-2 sm:px-4 sm:py-3 align-top min-w-[80px] sm:min-w-[100px]"
+                        >
+                          <div className="break-words whitespace-normal word-break-break-word text-xs sm:text-sm">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
-              {filteredRows.length === 0 && (
-                <tr>
-                  <td className="px-4 py-8 text-center text-slate-500" colSpan={8}>
-                    Aucun trade ou retrait à afficher
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                  {filteredRows.length === 0 && (
+                    <tr>
+                      <td className="px-2 py-8 text-center text-slate-500 text-xs sm:text-sm" colSpan={8}>
+                        Aucun trade ou retrait à afficher
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredRows.length === 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
+              <p className="text-slate-500">Aucun trade ou retrait à afficher</p>
+            </div>
+          ) : (
+            filteredRows.map((row) => {
+              const ticket = "withdrawal" in row ? row.withdrawal.id : row.ticket;
+              if (!ticket) return null;
+              return (
+                <TradeCard
+                  key={ticket}
+                  row={row}
+                  isExpanded={expandedTrades.has(ticket)}
+                  onToggleExpand={() => toggleExpand(ticket)}
+                  allTags={allTags}
+                  onUpdateTags={updateTradeTags}
+                  onEnsureTag={ensureTagExists}
+                  savingTicket={savingTicket}
+                  mode={mode}
+                  baseCapital={baseCapital}
+                />
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 }

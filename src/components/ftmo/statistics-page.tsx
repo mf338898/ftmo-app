@@ -71,61 +71,65 @@ function DailySummaryTable({ data }: { data: DailySummary[] }) {
         </button>
       </div>
       <div className="overflow-hidden rounded-lg border border-slate-200">
-        <table className="min-w-full text-sm">
-          <thead className="bg-slate-50">
-            <tr>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Date
-              </th>
+                  <div className="break-words">Date</div>
+                </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Trades
-              </th>
+                  <div className="break-words">Trades</div>
+                </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Lots
-              </th>
+                  <div className="break-words">Lots</div>
+                </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Résultat
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
-            {data.map((row) => {
-              const date = new Date(row.date);
-              const day = date.getDate();
-              const month = date.getMonth() + 1;
-              const isPositive = row.result >= 0;
-              return (
-                <tr key={row.date} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-blue-600">
-                    {day}/{month}
-                  </td>
-                  <td className="px-4 py-3 text-slate-700">{row.trades}</td>
-                  <td className="px-4 py-3 text-slate-700">
-                    {(row.lots ?? 0).toFixed(2)}
-                  </td>
+                  <div className="break-words">Résultat</div>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {data.map((row) => {
+                const date = new Date(row.date);
+                const day = date.getDate();
+                const month = date.getMonth() + 1;
+                const isPositive = row.result >= 0;
+                return (
+                  <tr key={row.date} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-medium text-blue-600">
+                      <div className="break-words whitespace-nowrap">{day}/{month}</div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      <div className="break-words">{row.trades}</div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      <div className="break-words">{(row.lots ?? 0).toFixed(2)}</div>
+                    </td>
+                    <td
+                      className={clsx(
+                        "px-4 py-3 font-semibold",
+                        isPositive ? "text-green-600" : "text-red-600",
+                      )}
+                    >
+                      <div className="break-words">{formatValue(row.result, mode, baseCapital, "EUR", true)}</div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {data.length === 0 && (
+                <tr>
                   <td
-                    className={clsx(
-                      "px-4 py-3 font-semibold",
-                      isPositive ? "text-green-600" : "text-red-600",
-                    )}
+                    className="px-4 py-4 text-center text-slate-500"
+                    colSpan={4}
                   >
-                    {formatValue(row.result, mode, baseCapital, "EUR", true)}
+                    Aucune donnée disponible
                   </td>
                 </tr>
-              );
-            })}
-            {data.length === 0 && (
-              <tr>
-                <td
-                  className="px-4 py-4 text-center text-slate-500"
-                  colSpan={4}
-                >
-                  Aucune donnée disponible
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -146,13 +150,15 @@ export function StatisticsPage({
   const [loading, setLoading] = useState(true);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [periodFilter, setPeriodFilter] = useState<"7d" | "30d" | "90d" | "all">("all");
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const tagQuery = selectedTag ? `&tag=${encodeURIComponent(selectedTag)}` : "";
+        const periodQuery = periodFilter !== "all" ? `&period=${periodFilter}` : "";
         const res = await fetch(
-          `/api/ftmo/statistics?accountId=${accountId}&userId=demo-user${tagQuery}`,
+          `/api/ftmo/statistics?accountId=${accountId}&userId=demo-user${tagQuery}${periodQuery}`,
         );
         if (!res.ok) {
           setStatistics(null);
@@ -171,7 +177,7 @@ export function StatisticsPage({
       }
     };
     fetchData();
-  }, [accountId, refreshKey, selectedTag]);
+  }, [accountId, refreshKey, selectedTag, periodFilter]);
 
   useEffect(() => {
     const fetchTags = async () => {
@@ -192,6 +198,7 @@ export function StatisticsPage({
     fetchTags();
   }, [accountId, refreshKey]);
 
+
   return (
     <div className="space-y-6">
       <div>
@@ -199,8 +206,56 @@ export function StatisticsPage({
         <p className="mt-1 text-sm text-slate-600">
           Retraits exclus par défaut. Filtrez les résultats par tag si besoin.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-slate-700">Période :</span>
+          <button
+            onClick={() => setPeriodFilter("7d")}
+            className={clsx(
+              "rounded-full border px-3 py-1 text-sm",
+              periodFilter === "7d"
+                ? "border-blue-500 bg-blue-50 text-blue-700"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+            )}
+          >
+            7 jours
+          </button>
+          <button
+            onClick={() => setPeriodFilter("30d")}
+            className={clsx(
+              "rounded-full border px-3 py-1 text-sm",
+              periodFilter === "30d"
+                ? "border-blue-500 bg-blue-50 text-blue-700"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+            )}
+          >
+            30 jours
+          </button>
+          <button
+            onClick={() => setPeriodFilter("90d")}
+            className={clsx(
+              "rounded-full border px-3 py-1 text-sm",
+              periodFilter === "90d"
+                ? "border-blue-500 bg-blue-50 text-blue-700"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+            )}
+          >
+            90 jours
+          </button>
+          <button
+            onClick={() => setPeriodFilter("all")}
+            className={clsx(
+              "rounded-full border px-3 py-1 text-sm",
+              periodFilter === "all"
+                ? "border-blue-500 bg-blue-50 text-blue-700"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+            )}
+          >
+            Depuis le début
+          </button>
+        </div>
         {availableTags.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-slate-700">Tags :</span>
             <button
               onClick={() => setSelectedTag(null)}
               className={clsx(

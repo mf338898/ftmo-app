@@ -520,25 +520,33 @@ export function MainDashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      <DashboardHeader
-        activeAccount={activeAccount}
-        isBusy={isBusy}
-        onImport={handleImport}
-        onOpenWithdrawal={openWithdrawalModal}
-        onCleanup={handleCleanup}
-      />
+    <div>
+      <div className="sticky top-0 z-10 bg-white shadow-sm">
+        <div className="px-4 pt-6 pb-4 sm:px-6 lg:px-12">
+          <div className="space-y-3">
+            <DashboardHeader
+              activeAccount={activeAccount}
+              isBusy={isBusy}
+              onImport={handleImport}
+              onOpenWithdrawal={openWithdrawalModal}
+              onCleanup={handleCleanup}
+            />
 
-      <ModeToggleBanner mode={mode} baseCapital={baseCapital} onToggle={toggleMode} />
+            <ModeToggleBanner mode={mode} baseCapital={baseCapital} onToggle={toggleMode} />
+          </div>
+        </div>
+      </div>
 
-      <DashboardTabs
-        activeAccount={activeAccount}
-        selectedAccount={selectedAccount}
-        equitySeries={equitySeries}
-        withdrawals={withdrawals}
-        kpis={kpis}
-        refreshKey={refreshKey}
-      />
+      <div className="px-4 py-6 sm:px-6 lg:px-12">
+        <DashboardTabs
+          activeAccount={activeAccount}
+          selectedAccount={selectedAccount}
+          equitySeries={equitySeries}
+          withdrawals={withdrawals}
+          kpis={kpis}
+          refreshKey={refreshKey}
+        />
+      </div>
 
       <WithdrawalModal
         isOpen={withdrawalModalOpen}

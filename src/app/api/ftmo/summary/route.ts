@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/firebaseAdmin";
 import type { AccountDoc, TradeDoc, WithdrawalDoc } from "@/lib/firestoreSchemas";
 import { computeAggregates } from "@/lib/stats";
+import { Timestamp } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 
@@ -32,15 +33,30 @@ export async function GET(req: Request) {
       (doc) => ({ ticket: doc.id, ...doc.data() }) as TradeDoc,
     );
 
-    // Récupérer les retraits de ce compte
+    // Récupérer tous les retraits de ce compte (sans filtrer par userId pour l'affichage)
     const withdrawalsSnap = await db
       .collection("withdrawals")
       .where("accountId", "==", accountId)
-      .where("userId", "==", userId)
       .get();
-    const withdrawals = withdrawalsSnap.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() }) as WithdrawalDoc,
-    );
+
+    const withdrawals = withdrawalsSnap.docs.map((doc) => {
+      const raw = doc.data() as WithdrawalDoc & { date?: unknown };
+      let dateIso: string | undefined;
+      const rawDate = raw.date as Timestamp | string | undefined;
+      if (rawDate && typeof (rawDate as Timestamp).toDate === "function") {
+        dateIso = (rawDate as Timestamp).toDate().toISOString();
+      } else if (typeof raw.date === "string") {
+        const parsed = new Date(raw.date);
+        dateIso = Number.isNaN(parsed.getTime())
+          ? new Date(raw.date + "Z").toISOString() // tenter UTC si string sans offset
+          : parsed.toISOString();
+      }
+      return {
+        id: doc.id,
+        ...raw,
+        date: dateIso ?? new Date().toISOString(),
+      } as WithdrawalDoc;
+    });
 
     if (periodStart) {
       const startDate = new Date(periodStart).getTime();
